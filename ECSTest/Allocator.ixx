@@ -58,7 +58,7 @@ public:
 	PageAllocator()
 	{
 		for (auto& ptr : m_allocationAwaiters)
-			ptr = std::make_unique<std::counting_semaphore<>>(0);
+			ptr = std::make_unique<std::atomic_bool>(false);
 	}
 
 	void Allocate(const PageAllocationOp& op)
@@ -73,19 +73,21 @@ public:
 			const auto block0 = curPage << PageOffsetBits;
 			const auto firstBlock = std::max(block0, op.FirstIndex);
 			const auto lastBlock = std::min(block0 | ~(~0 << PageOffsetBits), op.LastIndex);
+			auto& existenceFlag = *m_allocationAwaiters[curPage].get();
 
 			if (block0 >= firstBlock && block0 <= lastBlock)
 			{
 				if (!curPagePtr.get())
 				{
 					curPagePtr = std::make_unique<AllocatedPage<T>>();
-					auto& sema = m_allocationAwaiters[curPage];
-					sema->release(sema->max());
+					existenceFlag.store(true);
+					existenceFlag.notify_all();
 				}
 			}
 			else
 			{
-				m_allocationAwaiters[curPage]->acquire();
+				while (!existenceFlag)
+					existenceFlag.wait(true);
 			}
 
 			auto firstBlockOffset = firstBlock & PageOffsetMask;
@@ -125,7 +127,7 @@ public:
 private:
 	friend class PageAllocationIndexer<MaxPages>;
 
-	std::array<std::unique_ptr<std::counting_semaphore<>>, MaxPages> m_allocationAwaiters;
+	std::array<std::unique_ptr<std::atomic_bool>, MaxPages> m_allocationAwaiters;
 	std::array<std::unique_ptr<AllocatedPage<T>>, MaxPages> m_pages;
 };
 

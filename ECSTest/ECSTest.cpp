@@ -27,13 +27,14 @@ int main()
     auto allocatorElements = indexer.GetAllocatorElements(allocator);
 
     auto [page, pageIndex, count] = allocatorElements.GetPage(1);
+    std::cout << page.Data[0] << " " << pageIndex.DeletedBitset << " " << count << std::endl;
 
-    std::cout << page.Data[0] << " " << pageIndex.DeletedBitset << " " << count;
+    indexer.Delete(allocOp.LastIndex);
+    std::cout << pageIndex.DeletedBitset << std::endl;
 
-    indexer.Delete(0);
     auto delOp = indexer.CleanupUnsync();
     allocator.CleanupDeletedUnsync(delOp);
     allocator.Get(0);
 
-    std::cout << "Hello World!\n";
+    std::cout << "Hello World!" << std::endl;
 }
