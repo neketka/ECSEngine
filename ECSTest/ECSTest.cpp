@@ -14,6 +14,12 @@ class MyComponent2
 
 int main()
 {
+    std::cout << "Hello World!" << std::endl;
+}
+
+/*
+
+
     PageAllocationIndexer indexer;
     PageAllocator<int> allocator;
 
@@ -36,5 +42,5 @@ int main()
     allocator.CleanupDeletedUnsync(delOp);
     allocator.Get(0);
 
-    std::cout << "Hello World!" << std::endl;
-}
+
+*/
