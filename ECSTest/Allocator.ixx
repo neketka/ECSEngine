@@ -15,21 +15,21 @@ const std::size_t PageOffsetBits = 6; // 64 max blocks
 const std::size_t PageBlockCount = 1 << PageOffsetBits;
 const std::size_t PageOffsetMask = PageBlockCount - 1;
 
-class PageAllocationOp
+export class PageAllocationOp
 {
 public:
 	std::size_t FirstIndex;
 	std::size_t LastIndex;
 };
 
-class PageDeletionOp
+export class PageDeletionOp
 {
 public:
 	std::vector<std::pair<std::size_t, std::size_t>> SrcToDestMoveIndices;
 	std::vector<std::size_t> DeletedIndices;
 };
 
-class AllocatedPageIndex
+export class AllocatedPageIndex
 {
 public:
 	std::atomic_int64_t DeletedBitset = 0;
