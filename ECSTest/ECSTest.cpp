@@ -1,46 +1,28 @@
 #include <iostream>
 
-import Allocator;
+import Component;
 
-class MyComponent
+struct MyComponent
 {
     int x;
 };
 
-class MyComponent2
+struct MyComponent2
 {
     int x;
 };
 
 int main()
 {
+    ComponentSet<MyComponent, MyComponent2> compSet;
+
+    auto myArch = compSet.template PrepareArchetype<MyComponent>();
+    auto myObjs = compSet.template CreateObjects<MyComponent>(myArch, 10);
+
+    for (auto objId : myObjs)
+    {
+        auto block = compSet.template GetQueryBlockById<MyComponent>(objId);
+    }
+    
     std::cout << "Hello World!" << std::endl;
 }
-
-/*
-
-
-    PageAllocationIndexer indexer;
-    PageAllocator<int> allocator;
-
-    auto allocOp = indexer.Allocate(1);
-    allocator.Allocate(allocOp);
-    allocOp = indexer.Allocate(64);
-
-    allocator.Allocate(allocOp);
-    allocator.Get(allocOp.LastIndex).second = 42;
-
-    auto allocatorElements = indexer.GetAllocatorElements(allocator);
-
-    auto [page, pageIndex, count] = allocatorElements.GetPage(1);
-    std::cout << page.Data[0] << " " << pageIndex.DeletedBitset << " " << count << std::endl;
-
-    indexer.Delete(allocOp.LastIndex);
-    std::cout << pageIndex.DeletedBitset << std::endl;
-
-    auto delOp = indexer.CleanupUnsync();
-    allocator.CleanupDeletedUnsync(delOp);
-    allocator.Get(0);
-
-
-*/

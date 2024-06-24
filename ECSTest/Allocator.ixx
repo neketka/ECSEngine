@@ -15,36 +15,32 @@ const std::size_t PageOffsetBits = 6; // 64 max blocks
 const std::size_t PageBlockCount = 1 << PageOffsetBits;
 const std::size_t PageOffsetMask = PageBlockCount - 1;
 
-export class PageAllocationOp
+export struct PageAllocationOp
 {
-public:
 	std::size_t FirstIndex;
 	std::size_t LastIndex;
 };
 
-export class PageDeletionOp
+export struct PageDeletionOp
 {
-public:
 	std::vector<std::pair<std::size_t, std::size_t>> SrcToDestMoveIndices;
 	std::vector<std::size_t> DeletedIndices;
 };
 
-export class AllocatedPageIndex
+export struct AllocatedPageIndex
 {
-public:
-	std::atomic_int64_t DeletedBitset = 0;
-	std::array<std::shared_mutex, PageBlockCount> Locks;
+	std::atomic_size_t DeletedBitset = 0;
+	std::array<std::shared_mutex, PageBlockCount> BlockLocks;
 };
 
 export
 template<std::movable T>
-class AllocatedPage
+struct AllocatedPage
 {
-public:
-	AllocatedPage() : Locks(), Data(new T[PageBlockCount]) {}
+	AllocatedPage() : Data(new T[PageBlockCount]) {}
 
 	std::unique_ptr<T[]> Data;
-	std::array<std::shared_mutex, PageBlockCount> Locks;
+	std::shared_mutex PageLock;
 };
 
 template<size_t MaxPages>
@@ -61,7 +57,7 @@ public:
 			ptr = std::make_unique<std::atomic_bool>(false);
 	}
 
-	void Allocate(const PageAllocationOp& op)
+	void Allocate(const PageAllocationOp& op, size_t initialDefault=0)
 	{
 		const auto firstPage = op.FirstIndex >> PageOffsetBits;
 		const auto lastPage = op.LastIndex >> PageOffsetBits;
@@ -95,34 +91,33 @@ public:
 
 			for (auto curBlock = firstBlockOffset; curBlock <= lastBlockOffset; ++curBlock)
 			{
-				new(&curPagePtr->Data[curBlock]) T;
+				if constexpr (std::integral<T>) 
+					curPagePtr->Data[curBlock] = initialDefault;
+				else
+					new(&curPagePtr->Data[curBlock]) T;
+				++initialDefault;
 			}
 		}
 	}
 
 	void CleanupDeletedUnsync(const PageDeletionOp& op)
 	{
-		// Ignore locks here since this is externally-synchronized
-
 		for (auto delIndex : op.DeletedIndices)
 		{
-			auto [_, delBlock] = Get(delIndex);
-			delBlock.~T();
+			Get(delIndex).~T();
 		}
 
 		for (auto [src, dest] : op.SrcToDestMoveIndices)
 		{
-			auto [_, srcBlock] = Get(src);
-			auto [__, destBlock] = Get(dest);
-			destBlock = srcBlock;
+			Get(dest) = Get(src);
 		}
 	}
 
-	std::pair<std::shared_mutex&, T&> Get(size_t index)
+	T& Get(size_t index)
 	{
 		auto& page = m_pages[index >> PageOffsetBits];
 		auto offset = index & PageOffsetMask;
-		return { page->Locks[offset], page->Data[offset] };
+		return page->Data[offset];
 	}
 private:
 	friend class PageAllocationIndexer<MaxPages>;
@@ -139,25 +134,37 @@ public:
 	PageAllocatorElements(std::unique_ptr<AllocatedPage<T>> *pages, AllocatedPageIndex *indexes, std::size_t firstFreeIndex) : 
 		m_pages(pages), m_indexes(indexes), 
 		m_lastPageSize(1 + ((firstFreeIndex - 1) & PageOffsetBits)),
-		m_pageCount(firstFreeIndex == 0 ? 0 : (1 + ((firstFreeIndex - 1) >> PageOffsetBits)))
+		m_pageCount(firstFreeIndex == 0 ? 0 : (1 + ((firstFreeIndex - 1) >> PageOffsetBits))),
+		m_itemCount(firstFreeIndex)
 	{
 	}
 
-	std::tuple<AllocatedPage<T>&, AllocatedPageIndex&, std::size_t> GetPage(std::size_t pageIndex)
+	std::tuple<AllocatedPage<T>&, AllocatedPageIndex&, std::size_t> GetPageIndexAndSize(std::size_t pageIndex)
 	{
 		auto pageSize = pageIndex == m_pageCount - 1 ? m_lastPageSize : PageBlockCount;
 		return { *m_pages[pageIndex].get(), m_indexes[pageIndex], pageSize };
+	}
+
+	std::size_t GetPageSize()
+	{
+		return PageBlockCount;
 	}
 
 	std::size_t GetPageCount()
 	{
 		return m_pageCount;
 	}
+
+	std::size_t GetBlockCount()
+	{
+		return m_itemCount;
+	}
 private:
 	AllocatedPageIndex *m_indexes;
 	std::unique_ptr<AllocatedPage<T>> *m_pages;
 	std::size_t m_pageCount;
 	std::size_t m_lastPageSize;
+	std::size_t m_itemCount;
 };
 
 
@@ -174,26 +181,11 @@ public:
 		return op;
 	}
 
-	void Delete(size_t index)
+	std::pair<std::reference_wrapper<std::shared_mutex>, std::reference_wrapper<std::shared_mutex>> GetLockPair(size_t index)
 	{
-		auto& pageIndex = m_pageIndexer[index >> PageOffsetBits];
-		auto offset = index & PageOffsetMask;
-
-		std::lock_guard<std::shared_mutex> guard(pageIndex.Locks[offset]);
-		pageIndex.DeletedBitset |= 1ull << offset;
-	}
-
-	std::shared_mutex& GetLock(size_t index)
-	{
-		return m_pageIndexer[index >> PageOffsetBits].Locks[index & PageOffsetMask];
-	}
-
-	bool IsDeletedUnsync(size_t index)
-	{
-		auto& pageIndex = m_pageIndexer[index >> PageOffsetBits];
-		auto offset = index & PageOffsetMask;
-
-		return (pageIndex.DeletedBitset >> offset) & 1;
+		auto& page = m_pageIndexer[index >> PageOffsetBits];
+		auto& blockLock = page.Locks[index & PageOffsetMask];
+		return std::make_pair(std::ref(page.PageLock), std::ref(blockLock));
 	}
 
 	PageDeletionOp CleanupUnsync()
@@ -215,7 +207,7 @@ public:
 				{
 					op.SrcToDestMoveIndices.push_back({ m_firstFreeAddress, curIndex });
 				}
-				pageIndex.DeletedBitset |= 1ull << offset;
+				pageIndex.DeletedBitset &= ~(1ull << offset);
 			}
 
 			// Avoid underflow
@@ -231,6 +223,21 @@ public:
 	PageAllocatorElements<T> GetAllocatorElements(PageAllocator<T>& allocator)
 	{
 		return PageAllocatorElements<T>(allocator.m_pages.data(), m_pageIndexer.data(), m_firstFreeAddress);
+	}
+
+	std::tuple<
+		std::size_t, std::size_t, 
+		std::reference_wrapper<std::shared_mutex>, std::reference_wrapper<std::shared_mutex>, 
+		std::reference_wrapper<std::atomic_size_t>
+	> GetBlockByAlloc(std::size_t alloc)
+	{
+		auto pageIndex = alloc >> PageOffsetBits;
+		auto blockIndex = alloc & PageOffsetMask;
+		auto& pageIndexer = m_pageIndexer[pageIndex];
+
+		return std::make_tuple(
+			pageIndex, blockIndex, std::ref(pageIndexer.PageLock), std::ref(pageIndexer.Locks[blockIndex]), std::ref(pageIndexer.DeletedBitset)
+		);
 	}
 private:
 	std::array<AllocatedPageIndex, MaxPages> m_pageIndexer;

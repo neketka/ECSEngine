@@ -13,7 +13,7 @@ export module Component;
 
 import Allocator;
 
-using ObjId = std::size_t;
+export using ObjId = std::size_t;
 
 class Archetype
 {
@@ -34,17 +34,17 @@ public:
 	ComponentStorage() : m_index(0) {}
 
 	template<class... TComponents>
-	void Create(const Archetype& arch, const PageAllocationOp& op)
+	void Create(const Archetype& arch, const PageAllocationOp& op, const std::size_t firstId)
 	{
 		if constexpr ((std::same_as<TComponent, TComponents> || ...))
 		{
-			auto allocator = m_archAllocators[arch.ArchetypeIndex];
-			allocator.Allocate(op);
+			auto& allocator = m_archAllocators[arch.ArchetypeIndex];
+			allocator.Allocate(op, firstId);
 		}
 	}
 
 	template<std::same_as<TComponent> T>
-	std::pair<std::shared_mutex&, TComponent&> GetByAllocId(const Archetype& arch, size_t allocId)
+	TComponent& GetByAllocId(const Archetype& arch, size_t allocId)
 	{
 		return m_archAllocators[arch.ArchetypeIndex].Get(allocId);
 	}
@@ -71,7 +71,7 @@ public:
 	}
 
 	template<std::same_as<TComponent> T>
-	static std::size_t GetIndex()
+	std::size_t GetIndex()
 	{
 		return m_index;
 	}
@@ -80,7 +80,6 @@ private:
 	std::unordered_map<std::size_t, PageAllocator<TComponent>> m_archAllocators;
 };
 
-export 
 template<std::movable TComponent, std::movable ...TRest>
 class ComponentStorage<TComponent, TRest...>
 {
@@ -89,14 +88,14 @@ public:
 	ComponentStorage() : m_storageCur(0), m_storageRest(1) {}
 
 	template<class... TComponents>
-	void Create(const Archetype& arch, const PageAllocationOp& op)
+	void Create(const Archetype& arch, const PageAllocationOp& op, const std::size_t firstId)
 	{
-		m_storageCur.Create<TComponents...>(arch, op);
-		m_storageRest.Create<TComponents...>(arch, op);
+		m_storageCur.Create<TComponents...>(arch, op, firstId);
+		m_storageRest.Create<TComponents...>(arch, op, firstId);
 	}
 
 	template<class T>
-	std::pair<std::shared_mutex&, T&> GetByAllocId(const Archetype& arch, size_t allocId)
+	T& GetByAllocId(const Archetype& arch, size_t allocId)
 	{
 		if constexpr (std::same_as<TComponent, T>)
 			return m_storageCur.GetByAllocId<T>(arch, allocId);
@@ -132,46 +131,29 @@ private:
 	ComponentStorage<TRest...> m_storageRest;
 };
 
+template<class ...TComponents>
+using QueryBlocks = std::tuple<std::vector<PageAllocatorElements<TComponents>>...>;
+
+template<class ...TComponents>
+struct QueryBlock
+{
+	const std::size_t PageIndex;
+	const std::size_t BlockIndex;
+	const std::atomic_size_t& PageDeletionBits;
+	std::shared_mutex& PageLock;
+	std::shared_mutex& BlockLock;
+	std::tuple<std::reference_wrapper<TComponents>...> Elements;
+};
+
 export
 template<std::movable ...TComponents>
 class ComponentSet
 {
 public:
 	template<class ...TComponents>
-	using QueryBlocks = std::tuple<std::vector<PageAllocatorElements<TComponents>>...>;
-
-	template<class ...TComponents>
 	std::vector<std::size_t> BuildIndexList()
 	{
 		return { m_storage.template GetIndex<TComponents>()... };
-	}
-
-	template<class ...TComponents>
-	std::size_t PrepareQuery()
-	{
-		std::lock_guard<std::shared_mutex> glock(m_globalLock);
-		std::vector<std::size_t> indexList = BuildIndexList<TComponents...>();
-
-		std::size_t queryIndex = 0;
-		for (auto [comps, _] : m_queriesToCompsArchs)
-		{
-			if (comps == indexList)
-				return queryIndex;
-			++queryIndex;
-		}
-
-		auto& [comps, archs] = m_queriesToCompsArchs.emplace_back();
-		comps.insert(comps.begin(), indexList);
-
-		std::size_t archIndex = 0;
-		for (auto& arch : m_archetypes)
-		{
-			if (std::includes(arch.ComponentIndices.begin(), arch.ComponentIndices.end(), comps.begin(), comps.end()))
-				archs.push_back(archIndex);
-			++archIndex;
-		}
-
-		return queryIndex;
 	}
 
 	template<class ...TComponents>
@@ -181,20 +163,20 @@ public:
 		std::vector<std::size_t> indexList = BuildIndexList<TComponents...>();
 
 		std::size_t archIndex = 0;
-		for (auto& arch : m_archetypes)
+		for (auto& archPtr : m_archetypes)
 		{
-			if (arch.ComponentIndices == indexList)
+			if (std::ranges::equal(indexList, archPtr->ComponentIndices))
 				return archIndex;
 			++archIndex;
 		}
 
-		auto& arch = m_archetypes.emplace_back();
+		auto& arch = *m_archetypes.emplace_back(std::make_unique<Archetype>());
 		arch.ArchetypeIndex = archIndex;
 		arch.ComponentIndices = indexList;
 
 		for (auto [comps, archs] : m_queriesToCompsArchs)
 		{
-			if (std::includes(indexList.begin(), indexList.end(), comps.begin(), comps.end()))
+			if (std::ranges::includes(indexList, comps))
 				archs.push_back(archIndex);
 		}
 
@@ -206,7 +188,7 @@ public:
 	{
 		m_globalLock.lock_shared();
 		auto& [_, archetypes] = m_queriesToCompsArchs[queryIndex];
-		auto allocators = std::make_tuple((m_storage.template GetPages<TComponents>(m_archetypes, archetypes))...);
+		auto allocators = std::make_tuple(m_storage.template GetPages<TComponents>(m_archetypes, archetypes)...);
 
 		m_globalLock.unlock_shared();
 
@@ -214,23 +196,26 @@ public:
 	}
 
 	template<class ...TComponents>
-	std::optional<std::tuple<std::shared_mutex&, std::pair<std::shared_mutex&, TComponents&>...>> GetQueryBlockByIdWithLock(ObjId id)
+	QueryBlock<TComponents...> GetQueryBlockById(ObjId id)
 	{
 		m_globalLock.lock_shared();
 		auto [archId, allocId] = m_objToArchetypeAllocation[id];
-		Archetype& arch = m_archetypes[archId];
+		Archetype& arch = *m_archetypes[archId];
 
-		auto& lock = arch.Indexer.GetLock(allocId);
-		lock.lock_shared();
-		if (arch.Indexer.IsDeletedUnsync(allocId)) {
-			lock.unlock_shared();
-			return std::nullopt;
-		}
+		auto [pageIndex, blockIndex, pageLock, blockLock, deletionBits] = arch.Indexer.GetBlockByAlloc(allocId);
 
-		auto tup = std::make_tuple(lock, m_storage.GetByAllocId<TComponents>(arch, allocId)...);
+		QueryBlock<TComponents...> block = {
+			pageIndex,
+			blockIndex,
+			deletionBits,
+			pageLock,
+			blockLock,
+			std::make_tuple(std::ref(m_storage.GetByAllocId<TComponents>(arch, allocId))...)
+		};
+
 		m_globalLock.unlock_shared();
 
-		return tup;
+		return block;
 	}
 
 	template<class ...TComponents>
@@ -241,9 +226,9 @@ public:
 
 		m_globalLock.lock_shared();
 
-		auto& arch = m_archetypes[archId];
+		auto& arch = *m_archetypes[archId];
 		auto allocOp = arch.Indexer.Allocate(count);
-		m_storage.template Create<TComponents...>(arch, allocOp);
+		m_storage.template Create<TComponents...>(arch, allocOp, firstId);
 
 		for (std::size_t i = 0; i < count; ++i)
 		{
@@ -258,23 +243,13 @@ public:
 		return objIds;
 	}
 
-	void Delete(ObjId id)
-	{
-		m_globalLock.lock_shared();
-		auto [archId, alloc] = m_objToArchetypeAllocation[id];
-		auto& arch = m_archetypes[archId];
-		auto& lock = arch.Indexer.GetLock(alloc);
-
-		std::lock_guard<std::shared_mutex> guard(lock);
-		arch.Indexer.Delete(alloc);
-		m_globalLock.unlock_shared();
-	}
-
 	void Cleanup()
 	{
 		std::lock_guard<std::shared_mutex> glock(m_globalLock);
-		for (Archetype& arch : m_archetypes)
+		for (auto& archPtr : m_archetypes)
 		{
+			Archetype& arch = *archPtr;
+
 			auto op = arch.Indexer.CleanupUnsync();
 			m_storage.CleanupUnsync(arch, op);
 			for (auto deleted : op.DeletedIndices)
@@ -301,7 +276,7 @@ private:
 	std::shared_mutex m_globalLock;
 	ComponentStorage<ObjId, TComponents...> m_storage;
 
-	std::vector<Archetype> m_archetypes;
+	std::vector<std::unique_ptr<Archetype>> m_archetypes;
 	std::vector<std::pair<std::vector<std::size_t>, std::vector<std::size_t>>> m_queriesToCompsArchs;
 
 	concurrency::concurrent_unordered_map<std::size_t, ObjId> m_allocationToObj;
