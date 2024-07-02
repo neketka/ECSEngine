@@ -18,16 +18,16 @@
     <ClCompile Include="Allocator.ixx">
       <Filter>ECS</Filter>
     </ClCompile>
-    <ClCompile Include="EcsAllocator.cpp">
-      <Filter>Game</Filter>
-    </ClCompile>
     <ClCompile Include="ECSTest.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.ss" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="EcsAllocator.h">
+    <ClInclude Include="EcsWorld.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="ComponentSet.h">
       <Filter>Game</Filter>
     </ClInclude>
   </ItemGroup>

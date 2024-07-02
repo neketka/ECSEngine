@@ -137,7 +137,6 @@
   <ItemGroup>
     <ClCompile Include="Allocator.ixx" />
     <ClCompile Include="Component.ixx" />
-    <ClCompile Include="EcsAllocator.cpp" />
     <ClCompile Include="ECSTest.cpp" />
     <ClCompile Include="System.ixx" />
   </ItemGroup>
@@ -145,7 +144,8 @@
     <Text Include="lang.ss" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="EcsAllocator.h" />
+    <ClInclude Include="ComponentSet.h" />
+    <ClInclude Include="EcsWorld.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
