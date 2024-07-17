@@ -30,5 +30,8 @@
     <ClInclude Include="ComponentSet.h">
       <Filter>Game</Filter>
     </ClInclude>
+    <ClInclude Include="MemoryPool.h">
+      <Filter>Game</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
