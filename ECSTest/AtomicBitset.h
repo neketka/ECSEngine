@@ -18,11 +18,11 @@ private:
 		std::atomic_size_t Bits[BLOCK_SIZE / sizeof(std::atomic_size_t)];
 	};
 
-	static const std::size_t BLOCK_COUNT = std::max(MinBits, BLOCK_SIZE) / BLOCK_SIZE;
+	static const std::size_t BLOCK_COUNT = std::max(MinBits, BLOCK_SIZE) / (BLOCK_SIZE);
 
 	static const std::size_t BLOCK_BITS = std::bit_width(BLOCK_COUNT);
 	static const std::size_t OFFSET_BITS = std::bit_width(BLOCK_SIZE / sizeof(std::atomic_size_t));
-	static const std::size_t INTERNAL_SHIFT_BITS = std::bit_width(sizeof(std::size_t) << 3);
+	static const std::size_t INTERNAL_SHIFT_BITS = 64;
 
 	inline std::tuple<std::uint16_t, std::uint8_t, std::uint8_t> GetComponents(std::size_t index)
 	{
@@ -31,6 +31,11 @@ private:
 		auto block = (index >> (INTERNAL_SHIFT_BITS + OFFSET_BITS)) & ~(~0ull << BLOCK_BITS);
 
 		return { block, offset, internal };
+	}
+
+	inline std::size_t ToIndex(std::uint16_t block, std::uint8_t offset, std::uint8_t bit)
+	{
+		return bit | (offset << INTERNAL_SHIFT_BITS) | (block << (INTERNAL_SHIFT_BITS + OFFSET_BITS));
 	}
 
 	std::array<MemoryPool::Ptr<AtomicBitsetBlock>, BLOCK_COUNT> m_blocks;
@@ -65,11 +70,33 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 			Grow();
 		}
 
-		
 		auto [blockCount, _, _] = GetComponents(m_count);
 		for (auto block = blockCount - 1; block >= 0; --block)
 		{
-			auto& block = m_blocks[block];
+			auto& blockPtr = m_blocks[block];
+			blockPtr.WaitNonnull();
+			
+			std::uint8_t offset = 0;
+			for (auto& bits : blockPtr->Bits)
+			{
+				auto assumption = bits.load();
+				auto bitIndex = 0;
+				while (
+					assumption && 
+					!bits.compare_exchange_weak(
+						assumption,
+						assumption ^ (0b1ull << (bitIndex = std::countr_one(assumption)))
+					)
+				);
+
+				if (assumption & (1 << bitIndex))
+				{
+					--m_zeroCount;
+					return ToIndex(block, offset, bitIndex);
+				}
+
+				++offset;
+			}
 		}
 	}
 }
@@ -77,7 +104,8 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 template<std::size_t MinBits>
 inline void AtomicBitset<MinBits>::Grow()
 {
-	auto [block, offset, bit] = GetComponents(m_count.fetch_add(64));
+	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE));
 	
+	m_blocks[block] = std::move(MemoryPool::RequestBlock<AtomicBitsetBlock>());
 
 }

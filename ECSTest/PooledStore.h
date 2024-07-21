@@ -301,7 +301,7 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 		{
 			if (blockIndex == 0)
 			{
-				node.WeakSwap(MemoryPool::RequestBlock<BlockIndexNode>());
+				node = std::move(MemoryPool::RequestBlock<BlockIndexNode>());
 				node.NotifyNonnull();
 			}
 			else
@@ -324,7 +324,7 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 			{
 				if (offset == 0)
 				{
-					block.WeakSwap(MemoryPool::RequestBlock<Block>());
+					block = std::move(MemoryPool::RequestBlock<Block>());
 					block.NotifyNonnull();
 				}
 				else
