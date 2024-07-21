@@ -69,6 +69,9 @@ struct Archetype
 	using Combine = TArchOther::template Append<TComponents...>;
 };
 
+template<template<typename EcsWorld> typename... TSystems>
 class EcsWorld
 {
+public:
+	using Self = EcsWorld<TSystems...>;
 };

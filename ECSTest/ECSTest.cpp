@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "MemoryPool.h"
+#include "PooledStore.h"
 
 struct MyComponent
 {
@@ -14,4 +14,10 @@ struct MyComponent2
 
 int main()
 {
+    MemoryPool::Initialize(10);
+    PooledStore<int> store;
+
+    auto myIter = store.Get(0);
+
+    MemoryPool::Destroy();
 }

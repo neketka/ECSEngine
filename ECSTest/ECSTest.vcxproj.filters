@@ -19,6 +19,9 @@
       <Filter>ECS</Filter>
     </ClCompile>
     <ClCompile Include="ECSTest.cpp" />
+    <ClCompile Include="MemoryPool.cpp">
+      <Filter>Game</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.ss" />
@@ -27,10 +30,19 @@
     <ClInclude Include="EcsWorld.h">
       <Filter>Game</Filter>
     </ClInclude>
-    <ClInclude Include="ComponentSet.h">
+    <ClInclude Include="MemoryPool.h">
       <Filter>Game</Filter>
     </ClInclude>
-    <ClInclude Include="MemoryPool.h">
+    <ClInclude Include="PooledStore.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="ComponentSet.h">
+      <Filter>ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="ParallelPooledStore.h">
+      <Filter>Game</Filter>
+    </ClInclude>
+    <ClInclude Include="AtomicBitset.h">
       <Filter>Game</Filter>
     </ClInclude>
   </ItemGroup>
