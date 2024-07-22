@@ -1,11 +1,12 @@
 #pragma once
 
 #include "PooledStore.h"
+#include "AtomicBitset.h"
 
 #include <tuple>
 #include <atomic>
 
-template<trivial... Ts>
+template<StoreCompatible... Ts>
 class ParallelPooledStoreIterator
 {
 public:
@@ -85,18 +86,11 @@ private:
 template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
-private:
-	static const std::size_t BITSETS_PER_BLOCK = BLOCK_SIZE / sizeof(std::atomic_size_t);
-	static const std::size_t BITS_PER_BLOCK = BITSETS_PER_BLOCK * 8;
-	static const std::size_t BITSET_BLOCKS_PER_STORE = PooledStore<std::size_t>::MAX_T_PER_STORE / BITS_PER_BLOCK;
-
-	struct AtomicBitsetBlock
-	{
-		std::atomic_size_t Bitsets[BITSETS_PER_BLOCK];
-	};
 public:
-	ParallelPooledStore(MemoryPool& pool, std::tuple<PooledStore<Ts>&...> stores)
-		: m_stores(stores), m_curCount(0), m_iterRefCount(0), m_pool(pool)
+	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
+
+	ParallelPooledStore(std::tuple<PooledStore<Ts>&...> stores)
+		: m_stores(stores), m_curCount(0), m_iterRefCount(0)
 	{
 	}
 
@@ -104,14 +98,17 @@ public:
 	{
 		auto firstIndex = (m_curCount += count);
 
+		m_sparseFree.GrowBitsTo(count);
+
 		return std::apply([&](PooledStore<Ts>&... elem)
 		{
 			return ParallelPooledStoreIterator<Ts...>(firstIndex, elem.Emplace(firstIndex, count)...);
-		}, m_curs);
+		}, m_stores);
 	}
 
 	void Delete(std::size_t index)
 	{
+		m_deletedBits.Set(index, true);
 	}
 
 	template<typename... TQueries>
@@ -143,11 +140,26 @@ public:
 		return View(*this);
 	}
 private:
-	MemoryPool& m_pool;
+	void Cleanup()
+	{
+		std::lock_guard<std::shared_mutex> guard(m_iterCreationLock);
 
-	std::array<std::atomic<AtomicBitsetBlock *>, 256> m_deletedBits;
-	std::array<std::atomic<AtomicBitsetBlock *>, 256> m_sparseFreeBits;
-	
+		const auto count = m_deletedBits.GetSize();
+
+		for (std::size_t i = 0; i < count; ++i)
+		{
+			if (m_deletedBits.Get(i))
+			{
+
+				m_deletedBits.Set(i, false);
+			}
+		}
+	}
+
+	AtomicBitset<MAX_ENTRIES> m_sparseFree;
+	AtomicBitset<MAX_ENTRIES> m_deletedBits;
+	PooledStore<std::size_t> m_sparseMap;
+
 	std::tuple<PooledStore<Ts>&...> m_stores;
 	std::atomic_size_t m_curCount;
 	std::atomic_size_t m_iterRefCount;

@@ -10,7 +10,7 @@
 #include <array>
 #include <concepts>
 
-const size_t BLOCK_SIZE = 1024;
+const size_t BLOCK_SIZE = 8192;
 class MemoryPool
 {
 public:

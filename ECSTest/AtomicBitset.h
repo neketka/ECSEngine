@@ -10,6 +10,8 @@ public:
 	bool Get(std::size_t index);
 	void Set(std::size_t index, bool value);
 	std::size_t AllocateOne();
+	std::size_t GetSize();
+	void GrowBitsTo(std::size_t minBitCount);
 private:
 	void Grow();
 
@@ -56,8 +58,18 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 	auto [block, offset, bit] = GetComponents(index);
 	auto& bits = m_blocks[block]->Bits[offset];
 
-	if (value) bits |= 1ull << bit;
-	else bits ^= 1ull << bit;
+	if (value)
+	{
+		auto oldBits = bits.fetch_or(1ull << bit);
+		if (!(oldBits & (1ull << bit)))
+			--m_zeroCount;
+	}
+	else
+	{
+		auto oldBits = bits.fetch_xor(1ull << bit);
+		if (oldBits & (1ull << bit))
+			++m_zeroCount;
+	}
 }
 
 template<std::size_t MinBits>
@@ -102,10 +114,24 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 }
 
 template<std::size_t MinBits>
+inline std::size_t AtomicBitset<MinBits>::GetSize()
+{
+	return m_count;
+}
+
+template<std::size_t MinBits>
+inline void AtomicBitset<MinBits>::GrowBitsTo(std::size_t minBitCount)
+{
+	while (m_count < minBitCount)
+		Grow();
+}
+
+template<std::size_t MinBits>
 inline void AtomicBitset<MinBits>::Grow()
 {
 	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE));
 	
 	m_blocks[block] = std::move(MemoryPool::RequestBlock<AtomicBitsetBlock>());
-
+	std::fill_n(m_blocks[block]->Bits, BLOCK_SIZE / sizeof(std::atomic_size_t), ~(0ull));
+	m_blocks[block].NotifyNonnull();
 }

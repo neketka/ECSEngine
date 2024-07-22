@@ -8,14 +8,14 @@ concept StoreCompatible =
 	&& std::is_trivially_destructible_v<T>
 	&& std::is_trivially_move_assignable_v<T>
 	&& std::is_trivially_move_constructible_v<T>
-	&& sizeof(T) >= sizeof(std::int32_t);
+	&& sizeof(T) >= sizeof(std::size_t);
 
 template<StoreCompatible T>
 class PooledStore
 {
 private:
 	static const std::size_t T_PER_BLOCK = BLOCK_SIZE / sizeof(T);
-	static const std::size_t MAX_INDICES_PER_STORE = 256;
+	static const std::size_t MAX_INDICES_PER_STORE = 6;
 
 	struct Block
 	{
