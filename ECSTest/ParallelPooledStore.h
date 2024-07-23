@@ -144,16 +144,7 @@ private:
 	{
 		std::lock_guard<std::shared_mutex> guard(m_iterCreationLock);
 
-		const auto count = m_deletedBits.GetSize();
 
-		for (std::size_t i = 0; i < count; ++i)
-		{
-			if (m_deletedBits.Get(i))
-			{
-
-				m_deletedBits.Set(i, false);
-			}
-		}
 	}
 
 	AtomicBitset<MAX_ENTRIES> m_sparseFree;
