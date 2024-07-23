@@ -1,23 +1,22 @@
 #include <iostream>
 
-#include "PooledStore.h"
+#include "ParallelPooledStore.h"
 
 struct MyComponent
 {
-    int x;
+    std::size_t x;
 };
 
 struct MyComponent2
 {
-    int x;
+    std::size_t x;
 };
 
 int main()
 {
     MemoryPool::Initialize(10);
-    PooledStore<int> store;
+    ParallelPooledStore<MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent, MyComponent> store;
 
-    auto myIter = store.Get(0);
 
     MemoryPool::Destroy();
 }

@@ -26,8 +26,8 @@ public:
 	{
 	}
 
-	ParallelPooledStoreIterator(std::size_t index, StoreIterator<Ts>... stores)
-		: m_curIndex(index), m_curs(stores)
+	ParallelPooledStoreIterator(std::size_t index, StoreIterator<Ts>... storeIters)
+		: m_curIndex(index), m_curs(storeIters...)
 	{
 	}
 
@@ -87,10 +87,11 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
+	static_assert(sizeof...(Ts) <= 20, "Up to 20 components are acceptable per pool (to fit inside a block)");
+
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
-	ParallelPooledStore(std::tuple<PooledStore<Ts>&...> stores)
-		: m_stores(stores), m_curCount(0), m_iterRefCount(0)
+	ParallelPooledStore() : m_curCount(0), m_iterRefCount(0)
 	{
 	}
 
@@ -151,7 +152,7 @@ private:
 	AtomicBitset<MAX_ENTRIES> m_deletedBits;
 	PooledStore<std::size_t> m_sparseMap;
 
-	std::tuple<PooledStore<Ts>&...> m_stores;
+	std::tuple<PooledStore<Ts>...> m_stores;
 	std::atomic_size_t m_curCount;
 	std::atomic_size_t m_iterRefCount;
 	std::shared_mutex m_iterCreationLock;
