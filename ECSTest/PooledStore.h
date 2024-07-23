@@ -4,11 +4,11 @@
 
 template<typename T>
 concept StoreCompatible =
-	std::is_trivially_copyable_v<T>
-	&& std::is_trivially_destructible_v<T>
-	&& std::is_trivially_move_assignable_v<T>
-	&& std::is_trivially_move_constructible_v<T>
-	&& sizeof(T) >= sizeof(std::size_t);
+	std::is_trivially_copyable_v<std::remove_const_t<T>>
+	&& std::is_trivially_destructible_v<std::remove_const_t<T>>
+	&& std::is_trivially_move_assignable_v<std::remove_const_t<T>>
+	&& std::is_trivially_move_constructible_v<std::remove_const_t<T>>
+	&& sizeof(T) >= sizeof(size_t);
 
 template<StoreCompatible T>
 class PooledStore
@@ -208,6 +208,11 @@ public:
 		auto operator<=>(const iterator& other) const
 		{
 			return m_curIndex <=> other.m_curIndex;
+		}
+
+		auto operator==(const iterator& other) const
+		{
+			return m_curIndex == other.m_curIndex;
 		}
 	private:
 		PooledStore<T> *m_store;

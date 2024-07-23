@@ -32,10 +32,10 @@ private:
 		return bit | (offset << INTERNAL_SHIFT_BITS) | (block << (INTERNAL_SHIFT_BITS + OFFSET_BITS));
 	}
 public:
-	class OnesConsumingIterator
+	class ZerosIterator
 	{
 	public:
-		using iterator = OnesConsumingIterator;
+		using iterator = ZerosIterator;
 		using reference = std::size_t&;
 		using pointer = std::size_t *;
 
@@ -43,23 +43,23 @@ public:
 		using value_type = std::size_t;
 		using difference_type = std::ptrdiff_t;
 
-		OnesConsumingIterator(AtomicBitset *bitset, std::size_t index) 
-			: m_bitsToSkip(0), m_onesLeft(bitset->m_count - bitset->m_zeroCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
+		ZerosIterator(AtomicBitset *bitset, std::size_t index) 
+			: m_bitsToSkip(0), m_zerosLeft(bitset->m_zeroCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
 		{
-			if (m_onesLeft == 0) return;
+			if (m_zerosLeft == 0) return;
 
 			m_curBlock = bitset->m_blocks[0].Load();
 			if (m_curBlock)
 			{
 				m_curBitvec = &m_curBlock->Bits[0];
-				if (!(m_curBitvec->load() & 0b1))
+				if (m_curBitvec->load() & 0b1)
 				{
-					ConsumeNextOne();
+					FindNextZero();
 				}
 			}
 		}
 
-		OnesConsumingIterator() : m_onesLeft(0)
+		ZerosIterator() : m_zerosLeft(0)
 		{
 		}
 
@@ -79,9 +79,9 @@ public:
 
 		value_type operator*()
 		{
-			while (m_bitsToSkip > 0 && m_onesLeft > 0)
+			while (m_bitsToSkip > 0 && m_zerosLeft > 0)
 			{
-				ConsumeNextOne();
+				FindNextZero();
 			}
 
 			return m_curIndex;
@@ -89,10 +89,15 @@ public:
 
 		auto operator<=>(const iterator& other) const
 		{
-			return m_onesLeft <=> other.m_onesLeft;
+			return m_zerosLeft <=> other.m_zerosLeft;
+		}
+
+		auto operator==(const iterator& other) const
+		{
+			return m_zerosLeft == other.m_zerosLeft;
 		}
 	private:
-		void ConsumeNextOne()
+		void FindNextZero()
 		{
 			++m_curIndex;
 
@@ -113,19 +118,17 @@ public:
 				m_curBitvec = &m_curBlock->Bits[offsetIndex];
 				
 				auto curVal = m_curBitvec->load();
-				if (!curVal)
+				if (curVal == ~0ull)
 				{
 					m_curIndex += 64 - bitIndex;
 				}
 				else
 				{
-					m_curBitIndex = std::countr_zero(curVal);
+					m_curBitIndex = std::countr_one(curVal);
 					break;
 				}
 
 			} while (true);
-
-			*m_curBitvec ^= 0b1 << m_curBitIndex;
 		}
 
 		AtomicBitset *m_bitset;
@@ -138,7 +141,7 @@ public:
 		std::size_t m_curBitvecIndex;
 		std::size_t m_curBitIndex;
 
-		std::size_t m_onesLeft;
+		std::size_t m_zerosLeft;
 		std::size_t m_bitsToSkip;
 	};
 
@@ -146,10 +149,11 @@ public:
 	void Set(std::size_t index, bool value);
 	std::size_t AllocateOne();
 	std::size_t GetSize();
+	std::size_t GetZeroCount();
 	void GrowBitsTo(std::size_t minBitCount);
 
-	OnesConsumingIterator begin();
-	OnesConsumingIterator end();
+	ZerosIterator begin();
+	ZerosIterator end();
 private:
 	void Grow();
 
@@ -188,13 +192,13 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 template<std::size_t MinBits>
 inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 {
-	while (true)
+	if (m_zeroCount == 0)
 	{
-		if (m_zeroCount == 0)
-		{
-			Grow();
-		}
+		return ~0ull;
+	}
 
+	while (m_zeroCount > 0)
+	{
 		auto [blockCount, _, _] = GetComponents(m_count);
 		for (std::size_t block = 0; block < blockCount; --block)
 		{
@@ -224,12 +228,20 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 			}
 		}
 	}
+
+	return ~0ull;
 }
 
 template<std::size_t MinBits>
 inline std::size_t AtomicBitset<MinBits>::GetSize()
 {
 	return m_count;
+}
+
+template<std::size_t MinBits>
+inline std::size_t AtomicBitset<MinBits>::GetZeroCount()
+{
+	return m_zeroCount;
 }
 
 template<std::size_t MinBits>
@@ -240,15 +252,15 @@ inline void AtomicBitset<MinBits>::GrowBitsTo(std::size_t minBitCount)
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::OnesConsumingIterator AtomicBitset<MinBits>::begin()
+inline AtomicBitset<MinBits>::ZerosIterator AtomicBitset<MinBits>::begin()
 {
-	return OnesConsumingIterator(this, 0);
+	return ZerosIterator(this, 0);
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::OnesConsumingIterator AtomicBitset<MinBits>::end()
+inline AtomicBitset<MinBits>::ZerosIterator AtomicBitset<MinBits>::end()
 {
-	return OnesConsumingIterator();
+	return ZerosIterator();
 }
 
 template<std::size_t MinBits>

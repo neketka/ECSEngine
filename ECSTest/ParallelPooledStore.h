@@ -70,13 +70,18 @@ public:
 	{
 		return std::apply([&](StoreIterator<Ts>&... elem)
 		{
-			return std::make_tuple<Ts...>(*elem...);
+			return std::make_tuple<Ts&...>(*elem...);
 		}, m_curs);
 	}
 
 	auto operator<=>(const iterator& other) const
 	{
 		return m_curs <=> other.m_curs;
+	}
+
+	auto operator==(const iterator& other) const
+	{
+		return m_curs == other.m_curs;
 	}
 private:
 	std::tuple<StoreIterator<Ts>...> m_curs;
@@ -87,29 +92,67 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	static_assert(sizeof...(Ts) <= 20, "Up to 20 components are acceptable per pool (to fit inside a block)");
+	static_assert(sizeof...(Ts) <= 54, "Up to 54 components are acceptable per pool (to fit inside a block)");
 
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
-	ParallelPooledStore() : m_curCount(0), m_iterRefCount(0)
+	ParallelPooledStore() : m_curCount(0)
 	{
 	}
 
-	ParallelPooledStoreIterator<Ts...> Emplace(std::size_t count)
+	void SetIdPrefix(std::int32_t prefix)
 	{
-		auto firstIndex = (m_curCount += count);
+		m_prefix = prefix << 32;
+	}
 
-		m_sparseFree.GrowBitsTo(count);
+	ParallelPooledStoreIterator<const size_t, Ts...> Emplace()
+	{
+		auto& idStore = std::get<0>(m_stores);
 
-		return std::apply([&](PooledStore<Ts>&... elem)
+		std::size_t newId = m_sparseFree.AllocateOne();
+		std::size_t index = *m_sparseMap.GetConst(newId);
+
+		if (newId == ~0ull)
 		{
-			return ParallelPooledStoreIterator<Ts...>(firstIndex, elem.Emplace(firstIndex, count)...);
-		}, m_stores);
+			while (newId == ~0ull)
+			{
+				index = m_curCount++;
+				auto newCount = index + 1;
+
+				m_sparseFree.GrowBitsTo(newCount);
+				m_sparseMapSize += 1;
+				m_sparseMap.Emplace(index, 1);
+
+				newId = m_sparseFree.AllocateOne();
+			}
+
+			*idStore.Emplace(index, 1) = m_prefix | newId;
+			*m_sparseMap.Get(newId) = index;
+		}
+
+		return 
+			std::apply([&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
+			{
+				return ParallelPooledStoreIterator<const std::size_t, Ts...>(index, idStore.GetConst(index), elem.Emplace(index, 1)...);
+			}, m_stores);
 	}
 
-	void Delete(std::size_t index)
+	void Delete(std::size_t id)
 	{
-		m_deletedBits.Set(index, true);
+		m_sparseFree.Set(id, true);
+	}
+
+	void UnsafeCleanup()
+	{
+		std::apply([&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
+		{
+			idStore.ReclaimBlocks();
+			((elem.ReclaimBlocks(), ...);
+
+			for (std::size_t zeroIndex : m_sparseFree)
+			{
+			}
+		}, m_stores);
 	}
 
 	template<typename... TQueries>
@@ -122,16 +165,24 @@ public:
 
 		ParallelPooledStoreIterator<TQueries> begin()
 		{
+			return CreateIterator(0);
 		}
 
 		ParallelPooledStoreIterator<TQueries> end()
 		{
+			return CreateIterator(m_store.m_curCount.load());
 		}
 
 		ParallelPooledStoreIterator<TQueries> Get(std::size_t index)
 		{
+			return CreateIterator(index);
 		}
 	private:
+		ParallelPooledStoreIterator<TQueries> CreateIterator(std::size_t index)
+		{
+			return ParallelPooledStoreIterator<TQueries>(index, std::get<std::remove_const_t<TQueries>>(m_store.m_stores)... );
+		}
+
 		ParallelPooledStore<Ts...>& m_store;
 	};
 
@@ -141,19 +192,11 @@ public:
 		return View(*this);
 	}
 private:
-	void Cleanup()
-	{
-		std::lock_guard<std::shared_mutex> guard(m_iterCreationLock);
-
-
-	}
-
 	AtomicBitset<MAX_ENTRIES> m_sparseFree;
-	AtomicBitset<MAX_ENTRIES> m_deletedBits;
 	PooledStore<std::size_t> m_sparseMap;
+	std::atomic_size_t m_sparseMapSize;
+	std::size_t m_prefix;
 
-	std::tuple<PooledStore<Ts>...> m_stores;
+	std::tuple<PooledStore<std::size_t>, PooledStore<Ts>...> m_stores;
 	std::atomic_size_t m_curCount;
-	std::atomic_size_t m_iterRefCount;
-	std::shared_mutex m_iterCreationLock;
 };
