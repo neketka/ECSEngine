@@ -127,6 +127,8 @@ template<typename T>
 inline MemoryPool::Ptr<T>::Ptr(const Ptr& other)
 {
 	m_ptr = other.m_ptr.load();
+	// Protect copy using const_cast
+	const_cast<Ptr&>(other).m_ptr.store(nullptr);
 }
 
 template<typename T>
@@ -139,6 +141,8 @@ template<typename T>
 inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>& other)
 {
 	m_ptr = other.m_ptr.load();
+	// Protect copy using const_cast
+	const_cast<Ptr&>(other).m_ptr.store(nullptr);
 
 	return *this;
 }
