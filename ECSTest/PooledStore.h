@@ -15,7 +15,7 @@ class PooledStore
 {
 private:
 	static const std::size_t T_PER_BLOCK = BLOCK_SIZE / sizeof(T);
-	static const std::size_t MAX_INDICES_PER_STORE = 6;
+	static const std::size_t MAX_INDICES_PER_STORE = 16;
 
 	struct Block
 	{
@@ -27,7 +27,7 @@ private:
 
 	struct BlockIndexNode
 	{
-		std::mutex WriterLock[BLOCKS_PER_INDEX];
+		std::shared_mutex WriterLock[BLOCKS_PER_INDEX];
 		MemoryPool::Ptr<Block> Block[BLOCKS_PER_INDEX];
 	};
 
@@ -306,7 +306,7 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 		{
 			if (blockIndex == 0)
 			{
-				node = std::move(MemoryPool::RequestBlock<BlockIndexNode>());
+				node = MemoryPool::RequestBlock<BlockIndexNode>();
 				node.NotifyNonnull();
 			}
 			else
@@ -329,7 +329,7 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 			{
 				if (offset == 0)
 				{
-					block = std::move(MemoryPool::RequestBlock<Block>());
+					block = MemoryPool::RequestBlock<Block>();
 					block.NotifyNonnull();
 				}
 				else
@@ -338,6 +338,8 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 				}
 			}
 
+			/* Causes deadlock unsurprisingly, for now only trivial types will be accepted
+			
 			lock.lock();
 
 			auto loadedBlock = block.Load();
@@ -346,6 +348,8 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 				new (loadedBlock->Data + offset) T();
 
 			lock.unlock();
+
+			*/
 		}
 	}
 

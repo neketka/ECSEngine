@@ -102,11 +102,11 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	static_assert(sizeof...(Ts) <= 54, "Up to 54 components are acceptable per pool (to fit inside a block)");
+	static_assert(sizeof...(Ts) <= 19, "Up to 54 components are acceptable per pool (to fit inside a block)");
 
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
-	ParallelPooledStore() : m_curCount(0)
+	ParallelPooledStore() : m_curCount(0), m_prefix(0)
 	{
 	}
 
@@ -120,7 +120,7 @@ public:
 		auto& idStore = std::get<0>(m_stores);
 
 		std::size_t newId = m_sparseFree.AllocateOne();
-		std::size_t index = *m_sparseMap.GetConst(newId);
+		std::size_t index = 0;
 
 		if (newId == ~0ull)
 		{
@@ -139,9 +139,13 @@ public:
 			*idStore.Emplace(index, 1) = m_prefix | newId;
 			*m_sparseMap.Get(newId) = index;
 		}
+		else
+		{
+			index = *m_sparseMap.GetConst(newId);
+		}
 
 		return 
-			std::apply([&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
+			std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
 			{
 				return ParallelPooledStoreIterator<const std::size_t, Ts...>(index, idStore.GetConst(index), elem.Emplace(index, 1)...);
 			}, m_stores);

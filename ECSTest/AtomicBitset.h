@@ -12,11 +12,11 @@ private:
 		std::atomic_size_t Bits[BLOCK_SIZE / sizeof(std::atomic_size_t)];
 	};
 
-	static const std::size_t BLOCK_COUNT = std::max(MinBits, BLOCK_SIZE) / (BLOCK_SIZE);
+	static const std::size_t BLOCK_COUNT = std::max(MinBits / 8, BLOCK_SIZE) / (BLOCK_SIZE);
 
 	static const std::size_t BLOCK_BITS = std::bit_width(BLOCK_COUNT);
-	static const std::size_t OFFSET_BITS = std::bit_width(BLOCK_SIZE / sizeof(std::atomic_size_t));
-	static const std::size_t INTERNAL_SHIFT_BITS = 64;
+	static const std::size_t OFFSET_BITS = std::bit_width(BLOCK_SIZE / sizeof(std::atomic_size_t)) - 1;
+	static const std::size_t INTERNAL_SHIFT_BITS = 6;
 
 	inline static std::tuple<std::uint16_t, std::uint8_t, std::uint8_t> GetComponents(std::size_t index)
 	{
@@ -52,7 +52,7 @@ public:
 			if (m_curBlock)
 			{
 				m_curBitvec = &m_curBlock->Bits[0];
-				if (m_curBitvec->load() & 0b1)
+				if (m_curBitvec->load() & 1)
 				{
 					FindNextZero();
 				}
@@ -214,7 +214,7 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 					assumption && 
 					!bits.compare_exchange_weak(
 						assumption,
-						assumption ^ (0b1ull << (bitIndex = std::countr_one(assumption)))
+						assumption ^ (1ull << (bitIndex = std::countr_one(assumption)))
 					)
 				);
 
@@ -266,9 +266,10 @@ inline AtomicBitset<MinBits>::ZerosIterator AtomicBitset<MinBits>::end()
 template<std::size_t MinBits>
 inline void AtomicBitset<MinBits>::Grow()
 {
-	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE));
+	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE * 8));
 	
-	m_blocks[block] = std::move(MemoryPool::RequestBlock<AtomicBitsetBlock>());
+	m_blocks[block] = MemoryPool::RequestBlock<AtomicBitsetBlock>();
 	std::fill_n(m_blocks[block]->Bits, BLOCK_SIZE / sizeof(std::atomic_size_t), ~(0ull));
+	m_zeroCount += BLOCK_SIZE * 8;
 	m_blocks[block].NotifyNonnull();
 }

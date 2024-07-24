@@ -10,7 +10,7 @@
 #include <array>
 #include <concepts>
 
-const size_t BLOCK_SIZE = 8192;
+const size_t BLOCK_SIZE = 4096;
 class MemoryPool
 {
 public:
@@ -22,9 +22,9 @@ public:
 		Ptr();
 		~Ptr();
 		Ptr(const Ptr& other);
-		Ptr(const Ptr&& other) noexcept;
+		Ptr(Ptr&& other) noexcept;
 		Ptr<T>& operator=(const Ptr<T>& other);
-		Ptr<T>& operator=(const Ptr<T>&& other) noexcept;
+		Ptr<T>& operator=(Ptr<T>&& other) noexcept;
 		operator bool() const;
 
 		T& operator*();
@@ -38,7 +38,7 @@ public:
 		void NotifyNonnull();
 	private:
 		std::atomic<T *> m_ptr;
-		void Move(const Ptr<T>& other);
+		void Move(Ptr<T>& other);
 	};
 
 	static void Initialize(std::size_t blockCount);
@@ -51,7 +51,10 @@ private:
 	MemoryPool(std::size_t blockCount);
 	~MemoryPool();
 
-	concurrency::concurrent_queue<std::size_t *> m_blocks;
+	std::size_t *m_region;
+	std::vector<std::size_t *> m_blocks;
+	std::shared_mutex m_replenishLock;
+	std::atomic_size_t m_blockTop;
 };
 
 inline void MemoryPool::Initialize(std::size_t blockCount)
@@ -66,35 +69,32 @@ inline void MemoryPool::Destroy()
 
 inline MemoryPool::MemoryPool(std::size_t blockCount)
 {
+	m_region = new std::size_t[blockCount * BLOCK_SIZE / sizeof(std::size_t)];
+	m_blocks.resize(blockCount);
+	m_blockTop = blockCount - 1;
+
+	auto region = m_region;
 	for (std::size_t i = 0; i < blockCount; ++i)
 	{
-		m_blocks.push(new std::size_t[BLOCK_SIZE / sizeof(std::size_t)]);
+		m_blocks[i] = region;
+		region += BLOCK_SIZE / sizeof(std::size_t);
 	}
 }
 
 inline MemoryPool::~MemoryPool()
 {
-	while (!m_blocks.empty())
-	{
-		std::size_t *block;
-		if (m_blocks.try_pop(block))
-		{
-			delete[] block;
-		}
-	}
+	m_blocks.clear();
+	delete[] m_region;
 }
 
 template<typename T>
 inline static MemoryPool::Ptr<T> MemoryPool::RequestBlock()
 {
-	std::size_t *block;
-	if (m_globalPool->m_blocks.try_pop(block))
-	{
-		std::fill_n(block, BLOCK_SIZE / sizeof(std::size_t), 0);
-		return new(block) T;
-	}
+	m_globalPool->m_replenishLock.lock_shared();
+	auto block = m_globalPool->m_blocks[m_globalPool->m_blockTop--];
+	m_globalPool->m_replenishLock.unlock_shared();
 
-	return nullptr;
+	return new(block) T;
 }
 
 template<typename T>
@@ -113,35 +113,40 @@ inline MemoryPool::Ptr<T>::~Ptr()
 	auto val = m_ptr.load();
 	if (!val) return;
 
-	if constexpr (!std::is_trivially_default_constructible_v<T>)
+	if constexpr (!std::is_trivially_destructible_v<T>)
 		val->~T();
-	m_globalPool->m_blocks.push(reinterpret_cast<std::size_t *>(val));
+
+	m_globalPool->m_replenishLock.lock();
+	m_globalPool->m_blocks[++m_globalPool->m_blockTop] = reinterpret_cast<std::size_t *>(m_ptr.load());
+	m_globalPool->m_replenishLock.unlock();
+
 	m_ptr = nullptr;
 }
 
 template<typename T>
 inline MemoryPool::Ptr<T>::Ptr(const Ptr& other)
 {
-	Move(std::move(other));
+	m_ptr = other.m_ptr.load();
 }
 
 template<typename T>
-inline MemoryPool::Ptr<T>::Ptr(const Ptr&& other) noexcept
+inline MemoryPool::Ptr<T>::Ptr(Ptr&& other) noexcept
 {
-	Move(std::move(other));
+	Move(other);
 }
 
 template<typename T>
 inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>& other)
 {
-	Move(std::move(other));
+	m_ptr = other.m_ptr.load();
+
 	return *this;
 }
 
 template<typename T>
-inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>&& other) noexcept
+inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(Ptr<T>&& other) noexcept
 {
-	Move(std::move(other));
+	Move(other);
 	return *this;
 }
 
@@ -205,8 +210,9 @@ inline void MemoryPool::Ptr<T>::NotifyNonnull()
 }
 
 template<typename T>
-inline void MemoryPool::Ptr<T>::Move(const Ptr<T>& other)
+inline void MemoryPool::Ptr<T>::Move(Ptr<T>& other)
 {
 	this->~Ptr(); // potentially bad practice
-	WeakSwap(std::move(other));
+	m_ptr.store(other.m_ptr);
+	other.m_ptr.store(nullptr);
 }
