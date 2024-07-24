@@ -199,7 +199,7 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 
 	while (m_zeroCount > 0)
 	{
-		auto [blockCount, _, _] = GetComponents(m_count);
+		auto [blockCount, _, __] = GetComponents(m_count);
 		for (std::size_t block = 0; block < blockCount; --block)
 		{
 			auto& blockPtr = m_blocks[block];
@@ -218,7 +218,7 @@ inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 					)
 				);
 
-				if (assumption & (1 << bitIndex))
+				if (assumption & (1ull << bitIndex))
 				{
 					--m_zeroCount;
 					return ToIndex(block, offset, bitIndex);

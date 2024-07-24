@@ -22,9 +22,9 @@ public:
 		Ptr();
 		~Ptr();
 		Ptr(const Ptr& other);
-		Ptr(const Ptr&& other);
+		Ptr(const Ptr&& other) noexcept;
 		Ptr<T>& operator=(const Ptr<T>& other);
-		Ptr<T>& operator=(const Ptr<T>&& other);
+		Ptr<T>& operator=(const Ptr<T>&& other) noexcept;
 		operator bool() const;
 
 		T& operator*();
@@ -126,7 +126,7 @@ inline MemoryPool::Ptr<T>::Ptr(const Ptr& other)
 }
 
 template<typename T>
-inline MemoryPool::Ptr<T>::Ptr(const Ptr&& other)
+inline MemoryPool::Ptr<T>::Ptr(const Ptr&& other) noexcept
 {
 	Move(std::move(other));
 }
@@ -139,7 +139,7 @@ inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>& other)
 }
 
 template<typename T>
-inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>&& other)
+inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>&& other) noexcept
 {
 	Move(std::move(other));
 	return *this;
@@ -161,11 +161,6 @@ template<typename T>
 inline T *MemoryPool::Ptr<T>::operator->()
 {
 	return m_ptr.load();
-}
-
-template<typename T>
-inline auto MemoryPool::Ptr<T>::operator<=>(const Ptr<T>& other)
-{
 }
 
 template<typename T>

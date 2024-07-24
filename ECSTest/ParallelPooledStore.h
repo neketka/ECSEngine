@@ -11,7 +11,7 @@ class ParallelPooledStoreIterator
 {
 public:
 	template<typename T>
-	using StoreIterator = PooledStore<std::remove_const_t<T>>::Iterator<T>;
+	using StoreIterator = PooledStore<std::remove_const_t<T>>::template Iterator<T>;
 
 	using iterator = ParallelPooledStoreIterator<Ts...>;
 	using reference = std::tuple<Ts&...>;
@@ -20,6 +20,8 @@ public:
 	using iterator_category = std::forward_iterator_tag;
 	using value_type = std::tuple<Ts...>;
 	using difference_type = std::ptrdiff_t;
+
+	using UnconstReference = std::tuple<std::remove_const_t<Ts>&...>;
 
 	ParallelPooledStoreIterator(std::size_t index, PooledStore<std::remove_const_t<Ts>>&... stores) 
 		: m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...)
@@ -42,7 +44,7 @@ public:
 	{
 		std::apply([&](StoreIterator<Ts>&... elem)
 		{
-			((++elem, ...);
+			(++elem, ...);
 		}, m_curs);
 
 		return *this;
@@ -59,7 +61,7 @@ public:
 	{
 		std::apply([&](StoreIterator<Ts>&... elem)
 		{
-			((elem += diff, ...);
+			((elem += diff), ...);
 		}, m_curs);
 
 		m_curIndex += diff;
@@ -70,7 +72,15 @@ public:
 	{
 		return std::apply([&](StoreIterator<Ts>&... elem)
 		{
-			return std::make_tuple<Ts&...>(*elem...);
+			return std::forward_as_tuple(*elem...);
+		}, m_curs);
+	}
+
+	UnconstReference GetMutableExclusive() requires !std::same_as<UnconstReference, reference>
+	{
+		return std::apply([&](StoreIterator<Ts>&... elem)
+		{
+			return std::forward_as_tuple(const_cast<std::remove_const_t<Ts>&>(*elem)...);
 		}, m_curs);
 	}
 
@@ -100,9 +110,9 @@ public:
 	{
 	}
 
-	void SetIdPrefix(std::int32_t prefix)
+	void SetIdPrefix(std::size_t prefix)
 	{
-		m_prefix = prefix << 32;
+		m_prefix = prefix << 24; // 40 bit prefix
 	}
 
 	ParallelPooledStoreIterator<const size_t, Ts...> Emplace()
@@ -142,17 +152,52 @@ public:
 		m_sparseFree.Set(id, true);
 	}
 
-	void UnsafeCleanup()
+	void ExclusiveCleanup()
 	{
-		std::apply([&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
-		{
-			idStore.ReclaimBlocks();
-			((elem.ReclaimBlocks(), ...);
-
-			for (std::size_t zeroIndex : m_sparseFree)
+		auto fun =
+			[&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
 			{
-			}
-		}, m_stores);
+				idStore.ReclaimBlocks();
+				(elem.ReclaimBlocks(), ...);
+
+				std::size_t leftPtr = 0;
+				std::size_t rightPtr = m_curCount - 1;
+				std::size_t sparsePtr = 0;
+
+				auto constView = this->GetView<const std::size_t, std::add_const_t<Ts>...>();
+				auto sparseIter = m_sparseMap.GetConst(0);
+				auto curIter = constView.begin();
+				auto endIter = constView.Get(rightPtr);
+
+				for (std::size_t zeroIndex : m_sparseFree)
+				{
+					sparseIter += zeroIndex - sparsePtr;
+					sparsePtr = zeroIndex;
+					auto& index = const_cast<std::size_t&>(*sparseIter);
+
+					if (index != rightPtr)
+					{
+						curIter += (index - leftPtr);
+						leftPtr = index;
+						*curIter = *endIter;
+
+						std::size_t& id = std::get<std::size_t>(*curIter);
+						auto endSparseIter = m_sparseMap.GetConst(id);
+						auto& endIndex = const_cast<std::size_t&>(*endSparseIter);
+
+						m_sparseFree.Set(zeroIndex, true);
+						m_sparseFree.Set(endIndex, false);
+
+						endIndex = index;
+					}
+
+					--m_curCount;
+					--rightPtr;
+					--endIter;
+				}
+			};
+
+		std::apply(fun, m_stores);
 	}
 
 	template<typename... TQueries>
@@ -163,24 +208,25 @@ public:
 		{
 		}
 
-		ParallelPooledStoreIterator<TQueries> begin()
+		ParallelPooledStoreIterator<TQueries...> begin()
 		{
 			return CreateIterator(0);
 		}
 
-		ParallelPooledStoreIterator<TQueries> end()
+		ParallelPooledStoreIterator<TQueries...> end()
 		{
 			return CreateIterator(m_store.m_curCount.load());
 		}
 
-		ParallelPooledStoreIterator<TQueries> Get(std::size_t index)
+		ParallelPooledStoreIterator<TQueries...> Get(std::size_t index)
 		{
 			return CreateIterator(index);
 		}
 	private:
-		ParallelPooledStoreIterator<TQueries> CreateIterator(std::size_t index)
+		ParallelPooledStoreIterator<TQueries...> CreateIterator(std::size_t index)
 		{
-			return ParallelPooledStoreIterator<TQueries>(index, std::get<std::remove_const_t<TQueries>>(m_store.m_stores)... );
+			auto tpl = std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...);
+			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(tpl);
 		}
 
 		ParallelPooledStore<Ts...>& m_store;
@@ -189,7 +235,7 @@ public:
 	template<typename... TQueries>
 	View<TQueries...> GetView()
 	{
-		return View(*this);
+		return View<TQueries...>(*this);
 	}
 private:
 	AtomicBitset<MAX_ENTRIES> m_sparseFree;

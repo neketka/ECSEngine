@@ -20,7 +20,16 @@ int main()
     MemoryPool::Initialize(10);
     ParallelPooledStore<MyComponent, MyComponent2> store;
 
-    std::atomic<MyComponent> myAtom;
+    store.SetIdPrefix(111);
+    store.Delete(0);
+    store.Emplace();
+
+    auto myCompView = store.GetView<MyComponent>();
+    
+    for (auto [comp] : myCompView)
+    {
+        comp.x = 5;
+    }
 
     MemoryPool::Destroy();
 }
