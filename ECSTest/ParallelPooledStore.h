@@ -225,8 +225,10 @@ public:
 	private:
 		ParallelPooledStoreIterator<TQueries...> CreateIterator(std::size_t index)
 		{
-			auto tpl = std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...);
-			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(tpl);
+			// Convoluted to fix ambiguous syntax errors
+			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(
+				std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...)
+			);
 		}
 
 		ParallelPooledStore<Ts...>& m_store;
