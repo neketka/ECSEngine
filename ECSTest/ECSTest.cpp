@@ -35,6 +35,8 @@ void test()
     {
         std::cout << id << " " << idTest << " " << comp.x << " " << comp2.y << std::endl;
     }
+
+    store.ExclusiveCleanup();
 }
 
 int main()

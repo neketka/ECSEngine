@@ -102,7 +102,7 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	static_assert(sizeof...(Ts) <= 19, "Up to 54 components are acceptable per pool (to fit inside a block)");
+	static_assert(sizeof...(Ts) <= 15, "Up to 15 components are acceptable per pool (to fit inside a block)");
 
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
@@ -130,6 +130,7 @@ public:
 				auto newCount = index + 1;
 
 				m_sparseFree.GrowBitsTo(newCount);
+				m_occupiedBits.GrowBitsTo(newCount);
 				m_sparseMapSize += 1;
 				m_sparseMap.Emplace(index, 1);
 
@@ -144,6 +145,8 @@ public:
 			index = *m_sparseMap.GetConst(newId);
 		}
 
+		m_occupiedBits.Set(index, true);
+
 		return 
 			std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
 			{
@@ -153,6 +156,8 @@ public:
 
 	void Delete(std::size_t id)
 	{
+		auto index = *m_sparseMap.GetConst(id);
+		m_occupiedBits.Set(id, false);
 		m_sparseFree.Set(id, true);
 	}
 
@@ -166,38 +171,34 @@ public:
 
 				std::size_t leftPtr = 0;
 				std::size_t rightPtr = m_curCount - 1;
-				std::size_t sparsePtr = 0;
 
-				auto constView = this->GetView<const std::size_t, std::add_const_t<Ts>...>();
-				auto sparseIter = m_sparseMap.GetConst(0);
+				// break constness since this function is exclusive
+				auto constView = this->GetView<const std::size_t, const Ts...>();
 				auto curIter = constView.begin();
 				auto endIter = constView.Get(rightPtr);
 
-				for (std::size_t zeroIndex : m_sparseFree)
+				for (std::size_t freeIndex : m_occupiedBits)
 				{
-					sparseIter += zeroIndex - sparsePtr;
-					sparsePtr = zeroIndex;
-					auto& index = const_cast<std::size_t&>(*sparseIter);
-
-					if (index != rightPtr)
-					{
-						curIter += (index - leftPtr);
-						leftPtr = index;
-						*curIter = *endIter;
-
-						std::size_t& id = std::get<std::size_t>(*curIter);
-						auto endSparseIter = m_sparseMap.GetConst(id);
-						auto& endIndex = const_cast<std::size_t&>(*endSparseIter);
-
-						m_sparseFree.Set(zeroIndex, true);
-						m_sparseFree.Set(endIndex, false);
-
-						endIndex = index;
-					}
-
 					--m_curCount;
-					--rightPtr;
-					--endIter;
+
+					if (freeIndex >= rightPtr) break;
+
+					auto indexDiff = freeIndex - leftPtr;
+					leftPtr = freeIndex;
+					curIter += indexDiff;
+
+					auto unconst = std::apply([](const std::size_t& id, const Ts&... rest)
+						{
+							return std::forward_as_tuple(const_cast<std::size_t&>(id), const_cast<Ts&>(rest)...);
+						}, *curIter);
+
+
+					unconst = *endIter;
+					std::size_t id = std::get<std::size_t&>(unconst);
+
+					m_occupiedBits.Set(freeIndex, true);
+					const_cast<std::size_t&>(*m_sparseMap.GetConst(std::get<std::size_t&>(unconst))) = freeIndex;
+					m_occupiedBits.Set(rightPtr, false);
 				}
 			};
 
@@ -245,6 +246,7 @@ public:
 	}
 private:
 	AtomicBitset<MAX_ENTRIES> m_sparseFree;
+	AtomicBitset<MAX_ENTRIES> m_occupiedBits;
 	PooledStore<std::size_t> m_sparseMap;
 	std::atomic_size_t m_sparseMapSize;
 	std::size_t m_prefix;
