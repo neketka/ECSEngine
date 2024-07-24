@@ -161,6 +161,108 @@ public:
 		m_sparseFree.Set(id, true);
 	}
 
+	template<bool RefCounted, typename... TQueries>
+	class View
+	{
+	public:
+		View(ParallelPooledStore<Ts...>& store) : m_store(store)
+		{
+			IncrementRefcount();
+		}
+
+		View(const View& copied) : m_store(copied.store)
+		{
+			IncrementRefcount();
+		}
+
+		View(View&& moved) : m_store(moved.store)
+		{
+			IncrementRefcount();
+		}
+
+		View& operator=(const View& copied)
+		{
+			m_store = copied.store;
+			IncrementRefcount();
+		}
+
+		View& operator=(View&& moved)
+		{
+			m_store = moved.store;
+			IncrementRefcount();
+		}
+
+		~View()
+		{
+			if constexpr (RefCounted)
+			{
+				auto newRefCount = --m_store.m_refCount;
+				if (newRefCount == 0)
+				{
+					m_store.m_viewCreationLock.lock();
+					while ((newRefCount = m_store.m_refCount) > 0)
+						m_store.m_refCount.wait(newRefCount);
+
+					m_store.ExclusiveCleanup();
+					m_store.m_viewCreationLock.unlock();
+				}
+			}
+		}
+
+		ParallelPooledStoreIterator<TQueries...> begin()
+		{
+			return CreateIterator(0);
+		}
+
+		ParallelPooledStoreIterator<TQueries...> end()
+		{
+			return CreateIterator(m_store.m_curCount.load());
+		}
+
+		ParallelPooledStoreIterator<TQueries...> Get(std::size_t index)
+		{
+			return CreateIterator(index);
+		}
+	private:
+		ParallelPooledStore<Ts...>& m_store;
+
+		ParallelPooledStoreIterator<TQueries...> CreateIterator(std::size_t index)
+		{
+			// Convoluted to fix ambiguous syntax errors
+			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(
+				std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...)
+			);
+		}
+
+		void IncrementRefcount()
+		{
+			if constexpr (RefCounted)
+			{
+				m_store.m_viewCreationLock.lock_shared();
+				++m_store.m_refCount;
+				m_store.m_viewCreationLock.unlock_shared();
+			}
+		}
+	};
+
+	template<typename... TQueries>
+	View<true, TQueries...> GetView()
+	{
+		return View<true, TQueries...>(*this);
+	}
+private:
+	AtomicBitset<MAX_ENTRIES> m_sparseFree;
+	AtomicBitset<MAX_ENTRIES> m_occupiedBits;
+	PooledStore<std::size_t> m_sparseMap;
+	std::atomic_size_t m_sparseMapSize;
+	std::size_t m_prefix;
+
+	std::tuple<PooledStore<std::size_t>, PooledStore<Ts>...> m_stores;
+	std::atomic_size_t m_curCount;
+
+	std::shared_mutex m_viewCreationLock;
+	std::atomic_size_t m_refCount;
+
 	void ExclusiveCleanup()
 	{
 		auto fun =
@@ -173,7 +275,7 @@ public:
 				std::size_t rightPtr = m_curCount - 1;
 
 				// break constness since this function is exclusive
-				auto constView = this->GetView<const std::size_t, const Ts...>();
+				auto constView = View<false, const std::size_t, const Ts...>(*this);
 				auto curIter = constView.begin();
 				auto endIter = constView.Get(rightPtr);
 
@@ -204,53 +306,4 @@ public:
 
 		std::apply(fun, m_stores);
 	}
-
-	template<typename... TQueries>
-	class View
-	{
-	public:
-		View(ParallelPooledStore<Ts...>& store) : m_store(store)
-		{
-		}
-
-		ParallelPooledStoreIterator<TQueries...> begin()
-		{
-			return CreateIterator(0);
-		}
-
-		ParallelPooledStoreIterator<TQueries...> end()
-		{
-			return CreateIterator(m_store.m_curCount.load());
-		}
-
-		ParallelPooledStoreIterator<TQueries...> Get(std::size_t index)
-		{
-			return CreateIterator(index);
-		}
-	private:
-		ParallelPooledStoreIterator<TQueries...> CreateIterator(std::size_t index)
-		{
-			// Convoluted to fix ambiguous syntax errors
-			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(
-				std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...)
-			);
-		}
-
-		ParallelPooledStore<Ts...>& m_store;
-	};
-
-	template<typename... TQueries>
-	View<TQueries...> GetView()
-	{
-		return View<TQueries...>(*this);
-	}
-private:
-	AtomicBitset<MAX_ENTRIES> m_sparseFree;
-	AtomicBitset<MAX_ENTRIES> m_occupiedBits;
-	PooledStore<std::size_t> m_sparseMap;
-	std::atomic_size_t m_sparseMapSize;
-	std::size_t m_prefix;
-
-	std::tuple<PooledStore<std::size_t>, PooledStore<Ts>...> m_stores;
-	std::atomic_size_t m_curCount;
 };

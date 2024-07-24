@@ -45,5 +45,8 @@
     <ClInclude Include="AtomicBitset.h">
       <Filter>Game</Filter>
     </ClInclude>
+    <ClInclude Include="EcsStorage.h">
+      <Filter>Game</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

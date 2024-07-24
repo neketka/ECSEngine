@@ -147,6 +147,7 @@
   <ItemGroup>
     <ClInclude Include="AtomicBitset.h" />
     <ClInclude Include="ComponentSet.h" />
+    <ClInclude Include="EcsStorage.h" />
     <ClInclude Include="EcsWorld.h" />
     <ClInclude Include="MemoryPool.h" />
     <ClInclude Include="ParallelPooledStore.h" />
