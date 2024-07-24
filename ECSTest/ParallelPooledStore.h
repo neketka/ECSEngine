@@ -156,6 +156,8 @@ public:
 
 	void Delete(std::size_t id)
 	{
+		id &= ~(~0ull << 24);
+
 		auto index = *m_sparseMap.GetConst(id);
 		m_occupiedBits.Set(id, false);
 		m_sparseFree.Set(id, true);
@@ -165,17 +167,18 @@ public:
 	class View
 	{
 	public:
-		View(ParallelPooledStore<Ts...>& store) : m_store(store)
+		View(ParallelPooledStore<Ts...>& store, std::size_t beginIndex, std::size_t endIndex) 
+			: m_store(store), m_beginIndex(beginIndex), m_endIndex(endIndex)
 		{
 			IncrementRefcount();
 		}
 
-		View(const View& copied) : m_store(copied.store)
+		View(const View& copied) : m_store(copied.m_store), m_beginIndex(copied.m_beginIndex), m_endIndex(copied.m_endIndex)
 		{
 			IncrementRefcount();
 		}
 
-		View(View&& moved) : m_store(moved.store)
+		View(View&& moved) : m_store(moved.store), m_beginIndex(moved.m_beginIndex), m_endIndex(moved.m_endIndex)
 		{
 			IncrementRefcount();
 		}
@@ -183,12 +186,16 @@ public:
 		View& operator=(const View& copied)
 		{
 			m_store = copied.store;
+			m_beginIndex = copied.m_beginIndex;
+			m_endIndex = copied.m_endIndex;
 			IncrementRefcount();
 		}
 
 		View& operator=(View&& moved)
 		{
 			m_store = moved.store;
+			m_beginIndex = moved.m_beginIndex;
+			m_endIndex = moved.m_endIndex;
 			IncrementRefcount();
 		}
 
@@ -211,20 +218,22 @@ public:
 
 		ParallelPooledStoreIterator<TQueries...> begin()
 		{
-			return CreateIterator(0);
+			return CreateIterator(m_beginIndex);
 		}
 
 		ParallelPooledStoreIterator<TQueries...> end()
 		{
-			return CreateIterator(m_store.m_curCount.load());
+			return CreateIterator(m_endIndex);
 		}
 
-		ParallelPooledStoreIterator<TQueries...> Get(std::size_t index)
+		operator bool() const
 		{
-			return CreateIterator(index);
+			return m_beginIndex < m_endIndex;
 		}
 	private:
 		ParallelPooledStore<Ts...>& m_store;
+		std::size_t m_beginIndex;
+		std::size_t m_endIndex;
 
 		ParallelPooledStoreIterator<TQueries...> CreateIterator(std::size_t index)
 		{
@@ -248,7 +257,20 @@ public:
 	template<typename... TQueries>
 	View<true, TQueries...> GetView()
 	{
-		return View<true, TQueries...>(*this);
+		return View<true, TQueries...>(*this, 0, m_curCount.load());
+	}
+
+	template<typename... TQueries>
+	View<true, TQueries...> GetViewAt(std::size_t id)
+	{
+		id &= ~(~0ull << 24);
+
+		if (!m_sparseFree.Get(id))
+			return View<true, TQueries...>(*this, -1, -1);
+
+		auto index = *m_sparseMap.GetConst(id);
+
+		return View<true, TQueries...>(*this, index, std::min(index + 1, m_curCount.load()));
 	}
 private:
 	AtomicBitset<MAX_ENTRIES> m_sparseFree;
@@ -275,9 +297,10 @@ private:
 				std::size_t rightPtr = m_curCount - 1;
 
 				// break constness since this function is exclusive
-				auto constView = View<false, const std::size_t, const Ts...>(*this);
+				auto constView = View<false, const std::size_t, const Ts...>(*this, 0, m_curCount.load());
 				auto curIter = constView.begin();
-				auto endIter = constView.Get(rightPtr);
+				auto endIter = constView.end();
+				endIter += -1;
 
 				for (std::size_t freeIndex : m_occupiedBits)
 				{

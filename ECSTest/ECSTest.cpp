@@ -24,6 +24,7 @@ void test()
 
     auto myCompMutView = store.GetView<MyComponent, MyComponent2>();
     auto myCompConstView = store.GetView<const std::size_t, const MyComponent, const MyComponent2>();
+    auto myCompConstViewAt = store.GetViewAt<const std::size_t, const MyComponent, const MyComponent2>(id);
 
     for (auto [comp, comp2] : myCompMutView)
     {
@@ -32,6 +33,11 @@ void test()
     }
 
     for (auto [idTest, comp, comp2] : myCompConstView)
+    {
+        std::cout << id << " " << idTest << " " << comp.x << " " << comp2.y << std::endl;
+    }
+
+    for (auto [idTest, comp, comp2] : myCompConstViewAt)
     {
         std::cout << id << " " << idTest << " " << comp.x << " " << comp2.y << std::endl;
     }
