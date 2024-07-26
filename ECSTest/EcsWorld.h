@@ -4,7 +4,7 @@
 #include <concepts>
 #include <vector>
 
-#include "ComponentSet.h"
+#include "EcsStorage.h"
 
 template<typename TItemTarget, typename TItem, typename... TItems>
 constexpr std::size_t GetTypeIndex(std::size_t baseIndex=0)
@@ -58,16 +58,6 @@ struct Relation
 
 template<typename TRelationKind, ArchetypeLike TArchetype>
 struct InverseRelation : public Relation<TRelationKind, TArchetype, true> {};
-
-template<typename... TComponents>
-struct Archetype 
-{
-	template<typename... TAddComponents>
-	using Append = Archetype<TComponents..., TAddComponents...>;
-
-	template<typename TArchOther>
-	using Combine = TArchOther::template Append<TComponents...>;
-};
 
 template<template<typename EcsWorld> typename... TSystems>
 class EcsWorld

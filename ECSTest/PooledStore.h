@@ -15,7 +15,7 @@ class PooledStore
 {
 private:
 	static const std::size_t T_PER_BLOCK = BLOCK_SIZE / sizeof(T);
-	static const std::size_t MAX_INDICES_PER_STORE = 16;
+	static const std::size_t MAX_INDICES_PER_STORE = 84;
 
 	struct Block
 	{

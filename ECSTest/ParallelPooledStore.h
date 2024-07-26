@@ -102,8 +102,6 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	static_assert(sizeof...(Ts) <= 15, "Up to 15 components are acceptable per pool (to fit inside a block)");
-
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
 	ParallelPooledStore() : m_curCount(0), m_prefix(0)
