@@ -3,7 +3,7 @@
 #include "ParallelPooledStore.h"
 
 #include <type_traits>
-#include <ranges>
+#include <range/v3/view/concat.hpp>
 
 template<typename... TComponents>
 class Archetype
@@ -21,6 +21,8 @@ private:
 	template<typename TArchOther, typename TComp, typename... TComps>
 	using UnionParts = UnionParts<UnionParts<TArchOther, TComp>, TComps...>;
 public:
+	using Tuple = std::tuple<TComponents...>;
+
 	template<typename... TComps>
 	using AppendNoUnion = Archetype<TComponents..., TComps...>;
 
@@ -50,6 +52,30 @@ template<
 >
 class QueryImpl;
 
+template<typename TExcludedArch, typename TStore>
+auto FilterExcludedOne(TStore& store)
+{
+	if constexpr (std::tuple_size_v<std::common_type<TExcludedArch::Tuple, TStore::Tuple>::type> > 0)
+	{
+		return std::make_tuple();
+	}
+	else
+	{
+		return store;
+	}
+}
+
+template<typename TExcludedArch, typename... TStores>
+auto FilterExcluded(std::tuple<TStores&...> stores)
+{
+	return std::apply(
+		[](TStores&... stores)
+		{
+			return std::tuple_cat(FilterExcludedOne(stores)...);
+		}, stores
+	);
+}
+
 // Simple sequential
 template<
 	typename TExcludedArch, typename TContainsOrExprs,
@@ -58,7 +84,11 @@ template<
 class QueryImpl<std::monostate, TExcludedArch, TContainsOrExprs, EmptyArchetype, TUsedComponentsArch, TReadsWrites...>
 {
 public:
+	template<typename... TStores>
+	static auto GetView(std::tuple<TStores&...> stores)
+	{
 
+	}
 };
 
 // Relational
@@ -109,6 +139,13 @@ public:
 		QueryBase<
 			TLevelTraverseRelation, TExcludedArch, TContainsOrExprs::template Append<Archetype<TComponents...>>,
 			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
+		>;
+
+	template<typename... TComponents>
+	using ContainingAny =
+		QueryBase<
+		TLevelTraverseRelation, TExcludedArch, TContainsOrExprs::template Append<Archetype<TComponents>...>,
+		TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
 	template<typename... TComponents>
