@@ -2,6 +2,7 @@
 
 #include "PooledStore.h"
 #include "AtomicBitset.h"
+#include "Archetype.h"
 
 #include <tuple>
 #include <atomic>
@@ -102,7 +103,7 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	using Tuple = std::tuple<Ts...>;
+	using ArchType = Archetype<Ts...>;
 
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 

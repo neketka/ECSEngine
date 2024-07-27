@@ -48,5 +48,8 @@
     <ClInclude Include="EcsStorage.h">
       <Filter>Game</Filter>
     </ClInclude>
+    <ClInclude Include="Archetype.h">
+      <Filter>Game</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

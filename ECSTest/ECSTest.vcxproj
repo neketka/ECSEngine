@@ -145,6 +145,7 @@
     <Text Include="lang.ss" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Archetype.h" />
     <ClInclude Include="AtomicBitset.h" />
     <ClInclude Include="ComponentSet.h" />
     <ClInclude Include="EcsStorage.h" />

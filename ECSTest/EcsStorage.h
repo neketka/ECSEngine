@@ -5,73 +5,31 @@
 #include <type_traits>
 #include <range/v3/view/concat.hpp>
 
-template<typename... TComponents>
-class Archetype
-{
-private:
-	template<typename TTarget, typename TComp>
-	static inline constexpr bool ContainsInternal = std::is_same_v<TTarget, TComp>;
-
-	template<typename TTarget, typename TComp, typename... TComps>
-	static inline constexpr bool ContainsInternal = ContainsInternal<TTarget, TComp> || ContainsInternal<TTarget, TComps...>;
-
-	template<typename TArchOther, typename TComp>
-	using UnionParts = std::conditional<TArchOther::template Contains<TComp>, TArchOther, TArchOther::template AppendNoUnion<TComp>>;
-
-	template<typename TArchOther, typename TComp, typename... TComps>
-	using UnionParts = UnionParts<UnionParts<TArchOther, TComp>, TComps...>;
-public:
-	using Tuple = std::tuple<TComponents...>;
-
-	template<typename... TComps>
-	using AppendNoUnion = Archetype<TComponents..., TComps...>;
-
-	template<typename... TAddComponents>
-	using Append = UnionParts<Archetype<TComponents...>, TAddComponents...>;
-
-	template<typename TArchOther>
-	using Union = TArchOther::template Append<TComponents...>;
-
-	using StoreType = ParallelPooledStore<TComponents...>;
-
-	template<typename TComp>
-	static inline constexpr bool Contains = ContainsInternal<TComp, TComponents...>;
-
-	template<typename TArchSuperset>
-	static inline constexpr bool IsSubsetOf = TArchSuperset::template Contains<TComponents> && ...;
-
-	template<typename TArchSuperset>
-	static inline constexpr bool AnyIn = TArchSuperset::template Contains<TComponents> || ...;
-};
-
-using EmptyArchetype = Archetype<>;
-
 template<
 	typename TLevelTraverseRelation, typename TExcludedArch, typename TContainsOrExprs,
 	typename TRelationArchPath, typename TUsedComponentsArch, typename... TReadsWrites
 >
 class QueryImpl;
 
-template<typename TExcludedArch, typename TStore>
-auto FilterExcludedOne(TStore& store)
+template<typename TExcludedArch, typename TContainsOrExprs, typename TUsedComponentsArch, typename... TStores>
+auto FilterStores(std::tuple<TStores&...>& stores)
 {
-	if constexpr (std::tuple_size_v<std::common_type<TExcludedArch::Tuple, TStore::Tuple>::type> > 0)
+	auto filterFunc = []<typename TStore>(TStore& store)
 	{
-		return std::make_tuple();
-	}
-	else
-	{
-		return store;
-	}
-}
+		if constexpr (
+			TExcludedArch::template AnyIn<TStore::ArchType> ||
+			!(TUsedComponentsArch::template IsSubsetOf<TStore::ArchType>) ||
+			TContainsOrExprs::template MeetsAnyCriterion<TStore::ArchType>
+		)
+			return std::make_tuple();
+		else
+			return store;
+	};
 
-template<typename TExcludedArch, typename... TStores>
-auto FilterExcluded(std::tuple<TStores&...> stores)
-{
 	return std::apply(
 		[](TStores&... stores)
 		{
-			return std::tuple_cat(FilterExcludedOne(stores)...);
+			return std::tuple_cat(filterFunc(stores)...);
 		}, stores
 	);
 }
@@ -85,9 +43,25 @@ class QueryImpl<std::monostate, TExcludedArch, TContainsOrExprs, EmptyArchetype,
 {
 public:
 	template<typename... TStores>
-	static auto GetView(std::tuple<TStores&...> stores)
+	static auto GetView(std::tuple<TStores&...>& stores)
 	{
+		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
 
+		return std::apply([]<template... TFilteredStores>(TFilteredStores&... filteredStores)
+		{
+			return ranges::concat_view(filteredStores.template GetView<TReadsWrites...>()...);
+		}, filtered);
+	}
+
+	template<typename... TStores>
+	static auto GetView(std::tuple<TStores&...>& stores, std::size_t id)
+	{
+		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
+
+		return std::apply([]<template... TFilteredStores>(TFilteredStores&... filteredStores)
+		{
+			return ranges::concat_view(filteredStores.template GetViewAt<TReadsWrites...>(id)...);
+		}, filtered);
 	}
 };
 
@@ -183,8 +157,44 @@ template<typename... TArchetypes>
 class EcsStorage
 {
 public:
+	EcsStorage()
+	{
+		// Set prefixes on all
+	}
+
 	template<typename TQuery>
-	auto Query()
+	auto RunQuery()
+	{
+		return TQuery::GetView(m_stores);
+	}
+
+	template<typename TQuery>
+	auto RunQuery(std::size_t rootId)
+	{
+		return TQuery::GetView(m_stores, rootId);
+	}
+
+	template<typename TArchetype>
+	auto Create()
+	{
+		return std::get<TArchetype::StoreType>(m_stores).Emplace();
+	}
+
+	std::size_t CreateDynamic(std::size_t archetypeId)
+	{
+	}
+
+	std::size_t FindComponentIdDynamic(std::string_view componentName)
+	{
+
+	}
+
+	std::size_t FindArchetypeDynamic(std::vector<size_t> componentIds)
+	{
+
+	}
+
+	void DeleteDynamic(std::size_t objId)
 	{
 
 	}
