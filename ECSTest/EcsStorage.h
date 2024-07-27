@@ -3,6 +3,7 @@
 #include "ParallelPooledStore.h"
 
 #include <type_traits>
+#include <ranges>
 
 template<typename... TComponents>
 class Archetype
@@ -68,7 +69,7 @@ template<
 class QueryImpl<std::monostate, TExcludedArch, TContainsOrExprs, TRelationArchPath, TUsedComponentsArch, TReadsWrites...>
 {
 public:
-
+	
 };
 
 // BFS Relation Tree
@@ -124,11 +125,18 @@ public:
 			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
-	template<typename ...TRelationTypes> requires std::same_as<TLevelTraverseRelation, std::monostate>
-	using FollowRelations = 
+	template<typename TRelationType> requires std::same_as<TLevelTraverseRelation, std::monostate>
+	using FollowRelation =
 		QueryBase<
 			std::monostate, TExcludedArch, TContainsOrExprs,
-			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
+			TRelationArchPath::template Append<TRelationType>, TUsedComponentsArch, TReadsWrites...
+		>;
+
+	template<typename TRelationType> requires std::same_as<TLevelTraverseRelation, std::monostate>
+	using FollowInverseRelation = 
+		QueryBase<
+			std::monostate, TExcludedArch, TContainsOrExprs,
+			TRelationArchPath::template Append<const TRelationType>, TUsedComponentsArch, TReadsWrites...
 		>;
 };
 
