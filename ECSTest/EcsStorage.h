@@ -4,6 +4,9 @@
 
 #include <type_traits>
 #include <range/v3/view/concat.hpp>
+#include <tuple>
+
+using ObjectId = std::size_t;
 
 template<
 	typename TLevelTraverseRelation, typename TExcludedArch, typename TContainsOrExprs,
@@ -47,7 +50,7 @@ public:
 	{
 		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
 
-		return std::apply([]<template... TFilteredStores>(TFilteredStores&... filteredStores)
+		return std::apply([]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
 		{
 			return ranges::concat_view(filteredStores.template GetView<TReadsWrites...>()...);
 		}, filtered);
@@ -58,7 +61,7 @@ public:
 	{
 		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
 
-		return std::apply([]<template... TFilteredStores>(TFilteredStores&... filteredStores)
+		return std::apply([]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
 		{
 			return ranges::concat_view(filteredStores.template GetViewAt<TReadsWrites...>(id)...);
 		}, filtered);
@@ -91,41 +94,42 @@ template<
 	typename TLevelTraverseRelation, typename TExcludedArch, typename TContainsOrExprs, 
 	typename TRelationArchPath, typename TUsedComponentsArch, typename... TReadsWrites
 >
-class QueryBase
+class QueryBase : 
+	public QueryImpl<TLevelTraverseRelation, TExcludedArch, TContainsOrExprs, TRelationArchPath, TUsedComponentsArch, TReadsWrites...>
 {
 public:
-	template<typename... TComponents> requires !TUsedComponentsArch::template AnyIn<Archetype<TComponents...>>
+	template<typename... TComponents> requires !(TUsedComponentsArch::template AnyIn<Archetype<TComponents...>>)
 	using Read = 
 		QueryBase<
 			TLevelTraverseRelation, TExcludedArch, TContainsOrExprs, TRelationArchPath,
-			TUsedComponentsArch::template Append<TComponents...>, TReadsWrites..., const TComponents...
+			typename TUsedComponentsArch::template Append<TComponents...>, TReadsWrites..., const TComponents...
 		>;
 
 	template<typename... TComponents> requires !TUsedComponentsArch::template AnyIn<Archetype<TComponents...>>
 	using Write =
 		QueryBase<
 			TLevelTraverseRelation, TExcludedArch, TContainsOrExprs, TRelationArchPath,
-			TUsedComponentsArch::template Append<TComponents...>, TReadsWrites..., TComponents...
+			typename TUsedComponentsArch::template Append<TComponents...>, TReadsWrites..., TComponents...
 		>;
 
 	template<typename... TComponents>
 	using ContainingAll =
 		QueryBase<
-			TLevelTraverseRelation, TExcludedArch, TContainsOrExprs::template Append<Archetype<TComponents...>>,
+			TLevelTraverseRelation, TExcludedArch, typename TContainsOrExprs::template Append<Archetype<TComponents...>>,
 			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
 	template<typename... TComponents>
 	using ContainingAny =
 		QueryBase<
-		TLevelTraverseRelation, TExcludedArch, TContainsOrExprs::template Append<Archetype<TComponents>...>,
+		TLevelTraverseRelation, TExcludedArch, typename TContainsOrExprs::template Append<Archetype<TComponents>...>,
 		TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
 	template<typename... TComponents>
 	using Exclude =
 		QueryBase<
-			TLevelTraverseRelation, TExcludedArch::template Append<TComponents...>, TContainsOrExprs,
+			TLevelTraverseRelation, typename TExcludedArch::template Append<TComponents...>, TContainsOrExprs,
 			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
@@ -140,14 +144,14 @@ public:
 	using FollowRelation =
 		QueryBase<
 			std::monostate, TExcludedArch, TContainsOrExprs,
-			TRelationArchPath::template Append<TRelationType>, TUsedComponentsArch, TReadsWrites...
+			typename TRelationArchPath::template Append<TRelationType>, TUsedComponentsArch, TReadsWrites...
 		>;
 
 	template<typename TRelationType> requires std::same_as<TLevelTraverseRelation, std::monostate>
 	using FollowInverseRelation = 
 		QueryBase<
 			std::monostate, TExcludedArch, TContainsOrExprs,
-			TRelationArchPath::template Append<const TRelationType>, TUsedComponentsArch, TReadsWrites...
+			typename TRelationArchPath::template Append<const TRelationType>, TUsedComponentsArch, TReadsWrites...
 		>;
 };
 
@@ -160,6 +164,13 @@ public:
 	EcsStorage()
 	{
 		// Set prefixes on all
+		std::apply(
+			[]<typename... TStores>(TStores&... store)
+			{
+				std::size_t i = 1ull << 63;
+				((store.SetIdPrefix(++i)), ...);
+			}, m_stores
+		);
 	}
 
 	template<typename TQuery>
@@ -177,21 +188,28 @@ public:
 	template<typename TArchetype>
 	auto Create()
 	{
-		return std::get<TArchetype::StoreType>(m_stores).Emplace();
+		return std::get<typename TArchetype::StoreType>(m_stores).Emplace();
 	}
 
-	std::size_t CreateDynamic(std::size_t archetypeId)
+	template<typename TArchetype>
+	void Delete(std::size_t objId)
 	{
+		return std::get<TArchetype::StoreType>(m_stores).Delete(objId);
 	}
 
 	std::size_t FindComponentIdDynamic(std::string_view componentName)
 	{
-
+		return 0;
 	}
 
-	std::size_t FindArchetypeDynamic(std::vector<size_t> componentIds)
+	std::size_t FindArchetypeIdDynamic(std::vector<size_t> componentIds)
 	{
+		return 0;
+	}
 
+	std::size_t CreateDynamic(std::size_t archetypeId)
+	{
+		return 0;
 	}
 
 	void DeleteDynamic(std::size_t objId)
@@ -199,5 +217,5 @@ public:
 
 	}
 private:
-	std::tuple<TArchetypes::StoreType...> m_stores;
+	std::tuple<typename TArchetypes::StoreType...> m_stores;
 };

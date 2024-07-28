@@ -71,6 +71,7 @@ public:
 
 	reference operator*()
 	{
+		// TODP: skip deleted
 		return std::apply([&](StoreIterator<Ts>&... elem)
 		{
 			return std::forward_as_tuple(*elem...);

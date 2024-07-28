@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "ParallelPooledStore.h"
+#include "EcsStorage.h"
 
 struct MyComponent
 {
@@ -17,30 +17,19 @@ struct MyComponent2
 
 void test()
 {
-    ParallelPooledStore<MyComponent, MyComponent2> store;
+    using Simple = Archetype<MyComponent>;
+    using SimpleQuery = Query::Read<std::size_t, MyComponent>;
 
-    store.SetIdPrefix(111);
-    auto id = std::get<const std::size_t&>(*store.Emplace());
+    EcsStorage<Simple> storage;
 
-    auto myCompMutView = store.GetView<MyComponent, MyComponent2>();
-    auto myCompConstView = store.GetView<const std::size_t, const MyComponent, const MyComponent2>();
-    auto myCompConstViewAt = store.GetViewAt<const std::size_t, const MyComponent, const MyComponent2>(id);
+    auto simple = storage.Create<Simple>();
 
-    for (auto [comp, comp2] : myCompMutView)
+    /*
+    for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
-        comp.x = 5;
-        comp2.y = 10;
-    }
 
-    for (auto [idTest, comp, comp2] : myCompConstView)
-    {
-        std::cout << id << " " << idTest << " " << comp.x << " " << comp2.y << std::endl;
     }
-
-    for (auto [idTest, comp, comp2] : myCompConstViewAt)
-    {
-        std::cout << id << " " << idTest << " " << comp.x << " " << comp2.y << std::endl;
-    }
+    */
 }
 
 int main()
