@@ -15,22 +15,22 @@ template<
 class QueryImpl;
 
 template<typename TExcludedArch, typename TContainsOrExprs, typename TUsedComponentsArch, typename... TStores>
-auto FilterStores(std::tuple<TStores&...>& stores)
+auto FilterStores(std::tuple<TStores...>& stores)
 {
 	auto filterFunc = []<typename TStore>(TStore& store)
 	{
 		if constexpr (
 			TExcludedArch::template AnyIn<TStore::ArchType> ||
 			!(TUsedComponentsArch::template IsSubsetOf<TStore::ArchType>) ||
-			TContainsOrExprs::template MeetsAnyCriterion<TStore::ArchType>
+			(TContainsOrExprs::template MeetsAnyCriterion<TStore::ArchType> && !std::same_as<TContainsOrExprs, EmptyArchetype>)
 		)
 			return std::make_tuple();
 		else
-			return store;
+			return std::forward_as_tuple(store);
 	};
 
 	return std::apply(
-		[](TStores&... stores)
+		[&filterFunc](TStores&... stores)
 		{
 			return std::tuple_cat(filterFunc(stores)...);
 		}, stores
@@ -46,24 +46,40 @@ class QueryImpl<std::monostate, TExcludedArch, TContainsOrExprs, EmptyArchetype,
 {
 public:
 	template<typename... TStores>
-	static auto GetView(std::tuple<TStores&...>& stores)
+	static auto GetView(std::tuple<TStores...>& stores)
 	{
+		auto getView =
+			[]<typename TStore>(TStore& store)
+		{
+			return store.template GetView<TReadsWrites...>();
+		};
+		
 		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
 
-		return std::apply([]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
+		static_assert(std::tuple_size_v<decltype(filtered)> > 0, "Query must match at least one component!");
+
+		return std::apply([&getView]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
 		{
-			return ranges::concat_view(filteredStores.template GetView<TReadsWrites...>()...);
+			return ranges::concat_view(getView(filteredStores)...);
 		}, filtered);
 	}
 
 	template<typename... TStores>
-	static auto GetView(std::tuple<TStores&...>& stores, std::size_t id)
+	static auto GetView(std::tuple<TStores...>& stores, std::size_t id)
 	{
+		auto getViewAt =
+			[&id]<typename TStore>(TStore& store)
+			{
+				return store.template GetViewAt<TReadsWrites...>(id);
+			};
+
 		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
 
-		return std::apply([]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
+		static_assert(std::tuple_size_v<decltype(filtered)> > 0, "Query must accept at least one component!");
+
+		return std::apply([&getViewAt]<typename... TFilteredStores>(TFilteredStores&... filteredStores)
 		{
-			return ranges::concat_view(filteredStores.template GetViewAt<TReadsWrites...>(id)...);
+			return ranges::concat_view(getViewAt(id)...);
 		}, filtered);
 	}
 };
@@ -168,7 +184,7 @@ public:
 			[]<typename... TStores>(TStores&... store)
 			{
 				std::size_t i = 1ull << 63;
-				((store.SetIdPrefix(++i)), ...);
+				((store.SetIdPrefix(i++)), ...);
 			}, m_stores
 		);
 	}
@@ -176,7 +192,7 @@ public:
 	template<typename TQuery>
 	auto RunQuery()
 	{
-		return TQuery::GetView(m_stores);
+		return TQuery::template GetView<typename TArchetypes::StoreType...>(m_stores);
 	}
 
 	template<typename TQuery>

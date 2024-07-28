@@ -104,13 +104,16 @@ template<StoreCompatible... Ts>
 class ParallelPooledStore
 {
 public:
-	using ArchType = Archetype<Ts...>;
+	using ArchType = Archetype<std::size_t, Ts...>;
 
 	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
 	ParallelPooledStore() : m_curCount(0), m_prefix(0)
 	{
 	}
+
+	ParallelPooledStore(const ParallelPooledStore<Ts...>&) = delete;
+	ParallelPooledStore& operator=(const ParallelPooledStore<Ts...>&) = delete;
 
 	void SetIdPrefix(std::size_t prefix)
 	{
@@ -180,7 +183,7 @@ public:
 			IncrementRefcount();
 		}
 
-		View(View&& moved) : m_store(moved.store), m_beginIndex(moved.m_beginIndex), m_endIndex(moved.m_endIndex)
+		View(View&& moved) : m_store(moved.m_store), m_beginIndex(moved.m_beginIndex), m_endIndex(moved.m_endIndex)
 		{
 			IncrementRefcount();
 		}

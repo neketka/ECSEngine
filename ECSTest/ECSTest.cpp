@@ -22,14 +22,16 @@ void test()
 
     EcsStorage<Simple> storage;
 
-    auto simple = storage.Create<Simple>();
+    {
+        auto simpl = storage.Create<Simple>();
+        auto [id, comp] = *simpl;
+        comp.x = 51;
+    }
 
-    /*
     for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
 
     }
-    */
 }
 
 int main()
