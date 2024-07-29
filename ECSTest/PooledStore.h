@@ -172,15 +172,10 @@ public:
 			return *this;
 		}
 
-
 		reference operator*() const
 		{
-			return *m_curT;
-		}
-
-		reference operator*()
-		{
-			Deref();
+			// Hack to get around iterator rules
+			const_cast<PooledStore<T>::template Iterator<TIter> *>(this)->Deref();
 			return *m_curT;
 		}
 
@@ -269,9 +264,6 @@ public:
 
 			m_curTIndex = nextOffset;
 			m_curIndex = nextIndex;
-
-			// constant deference for constant iterator
-			if (IsConst) Deref();
 		}
 	};
 
@@ -279,6 +271,9 @@ public:
 	using ConstIterator = Iterator<const T>;
 
 	PooledStore();
+	PooledStore(const PooledStore<T>&) = delete;
+	PooledStore& operator=(const PooledStore<T>&) = delete;
+
 	MutableIterator Emplace(std::size_t firstIndex, std::size_t count);
 	MutableIterator Get(std::size_t index);
 	ConstIterator GetConst(std::size_t index);

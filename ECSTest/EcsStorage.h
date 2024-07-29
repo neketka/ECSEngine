@@ -51,11 +51,7 @@ public:
 		auto getView =
 			[]<typename TStore>(TStore& store)
 		{
-			auto v = store.template GetView<TReadsWrites...>();
-
-			static_assert(std::input_iterator<decltype(v)::Iterator>);
-
-			return v;
+			return store.template GetView<TReadsWrites...>();
 		};
 		
 		auto filtered = FilterStores<TExcludedArch, TContainsOrExprs, TUsedComponentsArch, TStores...>(stores);
@@ -196,7 +192,7 @@ public:
 	template<typename TQuery>
 	auto RunQuery()
 	{
-		return TQuery::template GetView<typename TArchetypes::StoreType...>(m_stores);
+		return TQuery::GetView(m_stores);
 	}
 
 	template<typename TQuery>
@@ -219,22 +215,25 @@ public:
 
 	std::size_t FindComponentIdDynamic(std::string_view componentName)
 	{
+		// TODO: Implement
 		return 0;
 	}
 
 	std::size_t FindArchetypeIdDynamic(std::vector<size_t> componentIds)
 	{
+		// TODO: Implement
 		return 0;
 	}
 
 	std::size_t CreateDynamic(std::size_t archetypeId)
 	{
+		// TODO: Implement
 		return 0;
 	}
 
 	void DeleteDynamic(std::size_t objId)
 	{
-
+		// TODO: Implement
 	}
 private:
 	std::tuple<typename TArchetypes::StoreType...> m_stores; // TODO: implement component agnostic archetypes

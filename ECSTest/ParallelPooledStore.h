@@ -168,7 +168,12 @@ public:
 
 		m_occupiedBits.Set(index, true);
 
-		return View<true, const std::size_t, Ts...>(*this, 0, m_curCount.load());
+		std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
+		{
+			((elem.Emplace(index, 1)), ...);
+		}, m_stores);
+
+		return View<true, const std::size_t, Ts...>(*this, index, index + 1);
 	}
 
 	void Delete(std::size_t id)
@@ -307,7 +312,7 @@ private:
 	void ExclusiveCleanup()
 	{
 		auto fun =
-			[&](PooledStore<std::size_t> idStore, PooledStore<Ts>&... elem)
+			[&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
 			{
 				idStore.ReclaimBlocks();
 				(elem.ReclaimBlocks(), ...);
@@ -332,16 +337,15 @@ private:
 					curIter += indexDiff;
 
 					auto unconst = std::apply([](const std::size_t& id, const Ts&... rest)
-						{
-							return std::forward_as_tuple(const_cast<std::size_t&>(id), const_cast<Ts&>(rest)...);
-						}, *curIter);
-
+					{
+						return std::forward_as_tuple(const_cast<std::size_t&>(id), const_cast<Ts&>(rest)...);
+					}, *curIter);
 
 					unconst = *endIter;
-					std::size_t id = std::get<std::size_t&>(unconst);
+					std::size_t id = std::get<std::size_t&>(unconst) & ~(~0ull << 24);
 
 					m_occupiedBits.Set(freeIndex, true);
-					const_cast<std::size_t&>(*m_sparseMap.GetConst(std::get<std::size_t&>(unconst))) = freeIndex;
+					const_cast<std::size_t&>(*m_sparseMap.GetConst(id)) = freeIndex;
 					m_occupiedBits.Set(rightPtr, false);
 				}
 			};
