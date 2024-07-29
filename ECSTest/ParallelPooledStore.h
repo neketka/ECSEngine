@@ -5,6 +5,7 @@
 #include "Archetype.h"
 
 #include <tuple>
+#include <ranges>
 #include <atomic>
 
 template<StoreCompatible... Ts>
@@ -19,7 +20,7 @@ public:
 	using pointer = std::tuple<Ts *...>;
 
 	using iterator_category = std::forward_iterator_tag;
-	using value_type = std::tuple<Ts...>;
+	using value_type = std::tuple<Ts&...>;
 	using difference_type = std::ptrdiff_t;
 
 	using UnconstReference = std::tuple<std::remove_const_t<Ts>&...>;
@@ -31,6 +32,10 @@ public:
 
 	ParallelPooledStoreIterator(std::size_t index, StoreIterator<Ts>... storeIters)
 		: m_curIndex(index), m_curs(storeIters...)
+	{
+	}
+
+	ParallelPooledStoreIterator()
 	{
 	}
 
@@ -169,9 +174,11 @@ public:
 	}
 
 	template<bool RefCounted, typename... TQueries>
-	class View
+	class View : public std::ranges::view_interface<View<RefCounted, TQueries...>>
 	{
 	public:
+		using Iterator = ParallelPooledStoreIterator<TQueries...>;
+
 		View(ParallelPooledStore<Ts...>& store, std::size_t beginIndex, std::size_t endIndex) 
 			: m_store(store), m_beginIndex(beginIndex), m_endIndex(endIndex)
 		{

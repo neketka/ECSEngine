@@ -28,10 +28,14 @@ void test()
         comp.x = 51;
     }
 
-    for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
+    auto query = storage.RunQuery<SimpleQuery>();
+    query.begin();
+
+    /*
+    for (auto [id, myComp] : query)
     {
 
-    }
+    }*/
 }
 
 int main()
