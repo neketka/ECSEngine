@@ -28,11 +28,13 @@ public:
 	ParallelPooledStoreIterator(std::size_t index, PooledStore<std::remove_const_t<Ts>>&... stores) 
 		: m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...)
 	{
+		// TODO: skip deleted
 	}
 
 	ParallelPooledStoreIterator(std::size_t index, StoreIterator<Ts>... storeIters)
 		: m_curIndex(index), m_curs(storeIters...)
 	{
+		// TODO: skip deleted
 	}
 
 	ParallelPooledStoreIterator()
@@ -48,6 +50,8 @@ public:
 
 	iterator& operator++()
 	{
+		// TODO: skip deleted
+
 		std::apply([&](StoreIterator<Ts>&... elem)
 		{
 			(++elem, ...);
@@ -76,8 +80,15 @@ public:
 
 	reference operator*()
 	{
-		// TODP: skip deleted
-		return std::apply([&](StoreIterator<Ts>&... elem)
+		return std::apply([](StoreIterator<Ts>&... elem)
+		{
+			return std::forward_as_tuple(*elem...);
+		}, m_curs);
+	}
+
+	reference operator*() const
+	{
+		return std::apply([](const StoreIterator<Ts>&... elem)
 		{
 			return std::forward_as_tuple(*elem...);
 		}, m_curs);
@@ -125,7 +136,7 @@ public:
 		m_prefix = prefix << 24; // 40 bit prefix
 	}
 
-	ParallelPooledStoreIterator<const size_t, Ts...> Emplace()
+	auto Emplace()
 	{
 		auto& idStore = std::get<0>(m_stores);
 
@@ -157,11 +168,7 @@ public:
 
 		m_occupiedBits.Set(index, true);
 
-		return 
-			std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
-			{
-				return ParallelPooledStoreIterator<const std::size_t, Ts...>(index, idStore.GetConst(index), elem.Emplace(index, 1)...);
-			}, m_stores);
+		return View<true, const std::size_t, Ts...>(*this, 0, m_curCount.load());
 	}
 
 	void Delete(std::size_t id)
@@ -228,12 +235,12 @@ public:
 			}
 		}
 
-		ParallelPooledStoreIterator<TQueries...> begin()
+		auto begin()
 		{
 			return CreateIterator(m_beginIndex);
 		}
 
-		ParallelPooledStoreIterator<TQueries...> end()
+		auto end()
 		{
 			return CreateIterator(m_endIndex);
 		}

@@ -21,21 +21,14 @@ void test()
     using SimpleQuery = Query::Read<std::size_t, MyComponent>;
 
     EcsStorage<Simple> storage;
-
-    {
-        auto simpl = storage.Create<Simple>();
-        auto [id, comp] = *simpl;
+    
+    for (auto [id, comp] : storage.Create<Simple>())
         comp.x = 51;
-    }
 
-    auto query = storage.RunQuery<SimpleQuery>();
-    query.begin();
-
-    /*
-    for (auto [id, myComp] : query)
+    for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
-
-    }*/
+        std::cout << id << " " << myComp.x << std::endl;
+    }
 }
 
 int main()

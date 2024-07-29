@@ -172,31 +172,15 @@ public:
 			return *this;
 		}
 
+
+		reference operator*() const
+		{
+			return *m_curT;
+		}
+
 		reference operator*()
 		{
-			[[unlikely]]
-			if (m_undefinedBlock)
-			{
-				m_curNode = m_store->m_nodes[m_curNodeIndex].Load();
-				if constexpr (!IsConst)
-				{
-					m_updateBlock = MemoryPool::RequestBlock<Block>();
-					m_curNode->WriterLock[m_curBlockIndex].lock();
-				}
-
-				m_curBlock = m_curNode->Block[m_curBlockIndex].Load();
-
-				if constexpr (!IsConst)
-				{
-					std::copy_n(reinterpret_cast<T *>(m_curBlock->Data), T_PER_BLOCK, reinterpret_cast<T *>(m_updateBlock->Data));
-					m_curBlock = m_updateBlock.Load();
-				}
-
-				m_curT = reinterpret_cast<TIter *>(m_curBlock->Data) + m_curTIndex;
-
-				m_undefinedBlock = false;
-			}
-
+			Deref();
 			return *m_curT;
 		}
 
@@ -229,6 +213,32 @@ public:
 		std::size_t m_curTIndex;
 		std::size_t m_curIndex;
 
+		void Deref()
+		{
+			[[unlikely]]
+			if (m_undefinedBlock)
+			{
+				m_curNode = m_store->m_nodes[m_curNodeIndex].Load();
+				if constexpr (!IsConst)
+				{
+					m_updateBlock = MemoryPool::RequestBlock<Block>();
+					m_curNode->WriterLock[m_curBlockIndex].lock();
+				}
+
+				m_curBlock = m_curNode->Block[m_curBlockIndex].Load();
+
+				if constexpr (!IsConst)
+				{
+					std::copy_n(reinterpret_cast<T *>(m_curBlock->Data), T_PER_BLOCK, reinterpret_cast<T *>(m_updateBlock->Data));
+					m_curBlock = m_updateBlock.Load();
+				}
+
+				m_curT = reinterpret_cast<TIter *>(m_curBlock->Data) + m_curTIndex;
+
+				m_undefinedBlock = false;
+			}
+		}
+
 		void FlushUpdateBlock()
 		{
 			// RCU swap here
@@ -259,6 +269,9 @@ public:
 
 			m_curTIndex = nextOffset;
 			m_curIndex = nextIndex;
+
+			// constant deference for constant iterator
+			if (IsConst) Deref();
 		}
 	};
 

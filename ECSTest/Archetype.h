@@ -73,6 +73,11 @@ public:
 
 	template<typename TArch>
 	static inline constexpr bool MeetsAnyCriterion = ((TComponents::template IsSubsetOf<TArch>) || ...);
+
+	template<typename TArchOther>
+	static inline constexpr bool Equals =
+			(Archetype<TComponents...>::template IsSubsetOf<TArchOther>) &&
+			(TArchOther::template IsSubsetOf<Archetype<TComponents...>>);
 };
 
 using EmptyArchetype = Archetype<>;
