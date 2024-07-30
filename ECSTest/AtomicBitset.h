@@ -117,13 +117,14 @@ public:
 				m_curBitvecIndex = offsetIndex;
 				m_curBitvec = &m_curBlock->Bits[offsetIndex];
 				
-				auto curVal = m_curBitvec->load();
+				auto curVal = m_curBitvec->load() | ~(~0ull << (bitIndex + 1));
 				if (curVal == ~0ull)
 				{
 					m_curIndex += 64 - bitIndex;
 				}
 				else
 				{
+					--m_zerosLeft;
 					m_curBitIndex = std::countr_one(curVal);
 					break;
 				}
@@ -160,6 +161,7 @@ private:
 	std::array<MemoryPool::Ptr<AtomicBitsetBlock>, BLOCK_COUNT> m_blocks;
 	std::atomic_size_t m_count;
 	std::atomic_size_t m_zeroCount;
+	std::atomic_size_t m_zeroCapacity;
 };
 
 template<std::size_t MinBits>
@@ -192,7 +194,7 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 template<std::size_t MinBits>
 inline std::size_t AtomicBitset<MinBits>::AllocateOne()
 {
-	if (m_zeroCount == 0)
+	if (m_zeroCapacity == 0)
 	{
 		return ~0ull;
 	}
@@ -268,8 +270,10 @@ inline void AtomicBitset<MinBits>::Grow()
 {
 	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE * 8));
 	
-	m_blocks[block] = MemoryPool::RequestBlock<AtomicBitsetBlock>();
+	auto block = MemoryPool::RequestBlock<AtomicBitsetBlock>();
 	std::fill_n(m_blocks[block]->Bits, BLOCK_SIZE / sizeof(std::atomic_size_t), 0ull);
 	m_zeroCount += BLOCK_SIZE * 8;
+
+	m_blocks[block] = std::move(block);
 	m_blocks[block].NotifyNonnull();
 }
