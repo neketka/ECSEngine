@@ -10,11 +10,16 @@
 #include <array>
 #include <concepts>
 
+
 const size_t BLOCK_SIZE = 4096;
+
+template<typename T>
+concept BlockSized = sizeof(T) <= BLOCK_SIZE;
+
 class MemoryPool
 {
 public:
-	template<typename T>
+	template<BlockSized T>
 	class Ptr
 	{
 	public:
@@ -44,7 +49,7 @@ public:
 	static void Initialize(std::size_t blockCount);
 	static void Destroy();
 
-	template<typename T>
+	template<BlockSized T>
 	static Ptr<T> RequestBlock();
 private:
 	static MemoryPool *m_globalPool;
@@ -87,7 +92,7 @@ inline MemoryPool::~MemoryPool()
 	delete[] m_region;
 }
 
-template<typename T>
+template<BlockSized T>
 inline static MemoryPool::Ptr<T> MemoryPool::RequestBlock()
 {
 	m_globalPool->m_replenishLock.lock_shared();
@@ -97,17 +102,17 @@ inline static MemoryPool::Ptr<T> MemoryPool::RequestBlock()
 	return new(block) T;
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::Ptr(T *block) : m_ptr(block)
 {
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::Ptr() : m_ptr(nullptr)
 {
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::~Ptr()
 {
 	auto val = m_ptr.load();
@@ -123,7 +128,7 @@ inline MemoryPool::Ptr<T>::~Ptr()
 	m_ptr = nullptr;
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::Ptr(const Ptr& other)
 {
 	m_ptr = other.m_ptr.load();
@@ -131,13 +136,13 @@ inline MemoryPool::Ptr<T>::Ptr(const Ptr& other)
 	const_cast<Ptr&>(other).m_ptr.store(nullptr);
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::Ptr(Ptr&& other) noexcept
 {
 	Move(other);
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>& other)
 {
 	m_ptr = other.m_ptr.load();
@@ -147,58 +152,58 @@ inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(const Ptr<T>& other)
 	return *this;
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>& MemoryPool::Ptr<T>::operator=(Ptr<T>&& other) noexcept
 {
 	Move(other);
 	return *this;
 }
 
-template<typename T>
+template<BlockSized T>
 inline MemoryPool::Ptr<T>::operator bool() const
 {
 	return m_ptr;
 }
 
-template<typename T>
+template<BlockSized T>
 inline T& MemoryPool::Ptr<T>::operator*()
 {
 	return *m_ptr;
 }
 
-template<typename T>
+template<BlockSized T>
 inline T *MemoryPool::Ptr<T>::operator->()
 {
 	return m_ptr.load();
 }
 
-template<typename T>
+template<BlockSized T>
 inline auto MemoryPool::Ptr<T>::operator<=>(const Ptr<T>& other)
 {
 	return Load() <=> other.m_ptr.load();
 }
 
-template<typename T>
+template<BlockSized T>
 inline T *MemoryPool::Ptr<T>::Load()
 {
 	return m_ptr;
 }
 
-template<typename T>
+template<BlockSized T>
 inline void MemoryPool::Ptr<T>::WeakSwap(Ptr<T> other)
 {
 	auto self = m_ptr.exchange(other.m_ptr);
 	other.m_ptr.exchange(self);
 }
 
-template<typename T>
+template<BlockSized T>
 inline void MemoryPool::Ptr<T>::Store(T *ptr)
 {
 	this->~Ptr();
 	m_ptr = ptr;
 }
 
-template<typename T>
+template<BlockSized T>
 inline void MemoryPool::Ptr<T>::WaitNonnull()
 {
 	while (!m_ptr)
@@ -207,13 +212,13 @@ inline void MemoryPool::Ptr<T>::WaitNonnull()
 	}
 }
 
-template<typename T>
+template<BlockSized T>
 inline void MemoryPool::Ptr<T>::NotifyNonnull()
 {
 	m_ptr.notify_all();
 }
 
-template<typename T>
+template<BlockSized T>
 inline void MemoryPool::Ptr<T>::Move(Ptr<T>& other)
 {
 	this->~Ptr(); // potentially bad practice
