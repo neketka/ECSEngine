@@ -174,8 +174,8 @@ public:
 	{
 		id &= ~(~0ull << 24);
 
-		auto index = *m_idMap.GetConst(id);
-		m_deletedBits.Set(id, true);
+		auto index = m_idMap.GetConst(id)->load();
+		m_deletedBits.Set(index, true);
 	}
 
 	template<bool RefCounted, typename... TQueries>
@@ -284,7 +284,7 @@ public:
 
 		auto index = *m_idMap.GetConst(id);
 
-		if (index == 0)
+		if (m_deletedBits.Get(index))
 			return View<true, TQueries...>(*this, -1, -1);
 
 		return View<true, TQueries...>(*this, index, std::min(index + 1, m_curCount.load()));
@@ -340,7 +340,6 @@ private:
 
 					const_cast<std::size_t&>(std::get<const std::size_t&>(*endIter)) = deadId; // Recycle dead id
 					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(movedId & ID_MASK)) = deletedIndex; // Update index of moved obj
-					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(deadId & ID_MASK)) = 0ull; // Mark id as dead
 				}
 			};
 

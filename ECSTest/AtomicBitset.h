@@ -44,7 +44,7 @@ public:
 		using difference_type = std::ptrdiff_t;
 
 		OnesIterator(AtomicBitset *bitset, std::size_t index) 
-			: m_bitsToSkip(0), m_onesLeft(bitset->m_oneCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
+			: m_onesLeft(bitset->m_oneCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
 		{
 			if (m_onesLeft == 0) return;
 
@@ -59,7 +59,7 @@ public:
 			}
 		}
 
-		OnesIterator()
+		OnesIterator() : m_onesLeft(0)
 		{
 		}
 
@@ -72,25 +72,24 @@ public:
 
 		iterator& operator++()
 		{
-			m_bitsToSkip++;
+			if (m_onesLeft > 1)
+			{
+				FindNextOne();
+				*m_curBitvec ^= 1 << m_curBitIndex;
+				--m_onesLeft;
+			}
 
 			return *this;
 		}
 
 		value_type operator*()
 		{
-			while (m_bitsToSkip > 0 && m_onesLeft > 0)
-			{
-				FindNextOne();
-				*m_curBitvec ^= 1 << m_curBitIndex;
-			}
-
 			return m_curIndex;
 		}
 
 		auto operator<=>(const iterator& other) const
 		{
-			return m_onesLeft <=> other.m_onesLeft;
+			return other.m_onesLeft <=> m_onesLeft;
 		}
 
 		auto operator==(const iterator& other) const
@@ -118,14 +117,13 @@ public:
 				m_curBitvecIndex = offsetIndex;
 				m_curBitvec = &m_curBlock->Bits[offsetIndex];
 				
-				auto curVal = m_curBitvec->load() & (~0ull << (bitIndex + 1));
+				auto curVal = m_curBitvec->load() & (~0ull << bitIndex);
 				if (curVal == 0)
 				{
 					m_curIndex += 64 - bitIndex;
 				}
 				else
 				{
-					--m_onesLeft;
 					m_curBitIndex = std::countr_zero(curVal);
 					break;
 				}
@@ -144,7 +142,6 @@ public:
 		std::size_t m_curBitIndex;
 
 		std::size_t m_onesLeft;
-		std::size_t m_bitsToSkip;
 	};
 
 	bool Get(std::size_t index);

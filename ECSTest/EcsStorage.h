@@ -92,7 +92,7 @@ template<
 class QueryImpl<std::monostate, TExcludedArch, TContainsOrExprs, TRelationArchPath, TUsedComponentsArch, TReadsWrites...>
 {
 public:
-	
+	// TODO: implement
 };
 
 // BFS Relation Tree
@@ -103,7 +103,7 @@ template<
 class QueryImpl<TLevelTraverseRelation, TExcludedArch, TContainsOrExprs, EmptyArchetype, TUsedComponentsArch, TReadsWrites...>
 {
 public:
-
+	// TODO: implement
 };
 
 template<
@@ -213,13 +213,26 @@ public:
 		return std::get<typename TArchetype::StoreType>(m_stores).Delete(objId);
 	}
 
+	template<typename TArchetypeSrc, typename TArchetypeDest>
+	auto Transfer(std::size_t objId)
+	{
+
+	}
+
+	template<typename TArchetypeSrc, typename TArchetypeDest>
+	auto Copy(std::size_t objId)
+	{
+
+	}
+
 	std::size_t FindComponentIdDynamic(std::string_view componentName)
 	{
 		// TODO: Implement
 		return 0;
 	}
 
-	std::size_t FindArchetypeIdDynamic(std::vector<size_t> componentIds)
+	template<std::ranges::input_range TRange>
+	std::size_t FindArchetypeIdDynamic(TRange componentIds) requires std::same_as<std::ranges::range_value_t<TRange>, std::size_t>
 	{
 		// TODO: Implement
 		return 0;
@@ -234,6 +247,16 @@ public:
 	void DeleteDynamic(std::size_t objId)
 	{
 		// TODO: Implement
+	}
+
+	void AddComponentDynamic(std::size_t objId, std::size_t componentId)
+	{
+
+	}
+
+	void RemoveComponentDynamic(std::size_t objId, std::size_t componentId)
+	{
+
 	}
 private:
 	std::tuple<typename TArchetypes::StoreType...> m_stores; // TODO: implement component agnostic archetypes

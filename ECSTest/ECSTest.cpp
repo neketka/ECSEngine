@@ -25,6 +25,19 @@ void test()
     for (auto [id, comp] : storage.Create<Simple>(2))
         comp.x = 51;
 
+    std::size_t exId = 0;
+
+    for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
+    {
+        std::cout << id << " " << myComp.x << std::endl;
+        exId = id;
+    }
+
+    storage.Delete<Simple>(exId);
+    storage.RunQuery<SimpleQuery>();
+
+    std::cout << "After Delete" << std::endl;
+
     for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
         std::cout << id << " " << myComp.x << std::endl;
