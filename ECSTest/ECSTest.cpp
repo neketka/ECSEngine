@@ -30,7 +30,7 @@ void test()
     for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
         std::cout << id << " " << myComp.x << std::endl;
-        exId = id;
+        exId = std::min(exId, id);
     }
 
     storage.Delete<Simple>(exId);

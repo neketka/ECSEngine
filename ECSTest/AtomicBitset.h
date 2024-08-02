@@ -75,9 +75,9 @@ public:
 			if (m_onesLeft > 1)
 			{
 				FindNextOne();
-				*m_curBitvec ^= 1 << m_curBitIndex;
-				--m_onesLeft;
+				*m_curBitvec ^= 1ull << m_curBitIndex;
 			}
+			--m_onesLeft;
 
 			return *this;
 		}
