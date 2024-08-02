@@ -135,11 +135,8 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="Allocator.ixx" />
-    <ClCompile Include="Component.ixx" />
     <ClCompile Include="ECSTest.cpp" />
     <ClCompile Include="MemoryPool.cpp" />
-    <ClCompile Include="System.ixx" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.ss" />
@@ -147,7 +144,6 @@
   <ItemGroup>
     <ClInclude Include="Archetype.h" />
     <ClInclude Include="AtomicBitset.h" />
-    <ClInclude Include="ComponentSet.h" />
     <ClInclude Include="EcsStorage.h" />
     <ClInclude Include="EcsWorld.h" />
     <ClInclude Include="MemoryPool.h" />
