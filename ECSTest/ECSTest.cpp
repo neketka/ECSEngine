@@ -22,7 +22,7 @@ void test()
 
     EcsStorage<Simple> storage;
     
-    for (auto [id, comp] : storage.Create<Simple>())
+    for (auto [id, comp] : storage.Create<Simple>(1))
         comp.x = 51;
 
     for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())

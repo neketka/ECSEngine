@@ -202,9 +202,9 @@ public:
 	}
 
 	template<typename TArchetype>
-	auto Create()
+	auto Create(std::size_t count)
 	{
-		return std::get<typename TArchetype::StoreType>(m_stores).Emplace();
+		return std::get<typename TArchetype::StoreType>(m_stores).Emplace(count);
 	}
 
 	template<typename TArchetype>

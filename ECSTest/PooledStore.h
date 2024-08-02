@@ -342,12 +342,12 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 					if constexpr (std::same_as<std::size_t, T>)
 					{
 						for (; offset <= lastOffsetIndex; ++offset)
-							loadedBlock->Data[offset] = T_PER_BLOCK * blockIndex + offset;
+							newBlock->Data[offset] = T_PER_BLOCK * blockIndex + offset;
 					}
 					else
 					{
 						for (; offset <= lastOffsetIndex; ++offset)
-							new (loadedBlock->Data + offset) T();
+							new (newBlock->Data + offset) T();
 					}
 
 					block = newBlock;
