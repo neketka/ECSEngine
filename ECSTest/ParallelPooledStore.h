@@ -9,6 +9,7 @@
 #include <atomic>
 
 const auto ID_MASK = ~(~0ull << 24);
+const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
 template<StoreCompatible... Ts>
 class ParallelPooledStoreIterator
@@ -27,16 +28,16 @@ public:
 
 	using UnconstReference = std::tuple<std::remove_const_t<Ts>&...>;
 
-	ParallelPooledStoreIterator(std::size_t index, PooledStore<std::remove_const_t<Ts>>&... stores) 
-		: m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...)
+	ParallelPooledStoreIterator(std::size_t index, AtomicBitset<MAX_ENTRIES>& deletedBits, PooledStore<std::remove_const_t<Ts>>&... stores) 
+		: m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...), m_deletedCur(deletedBits.begin()), m_deletedEnd(deletedBits.end())
 	{
-		// TODO: skip deleted
+		*this += 0; // trigger deletion check
 	}
 
 	ParallelPooledStoreIterator(std::size_t index, StoreIterator<Ts>... storeIters)
 		: m_curIndex(index), m_curs(storeIters...)
 	{
-		// TODO: skip deleted
+		*this += 0; // trigger deletion check
 	}
 
 	ParallelPooledStoreIterator()
@@ -52,12 +53,7 @@ public:
 
 	iterator& operator++()
 	{
-		// TODO: skip deleted
-
-		std::apply([&](StoreIterator<Ts>&... elem)
-		{
-			(++elem, ...);
-		}, m_curs);
+		*this += 1;
 
 		return *this;
 	}
@@ -71,12 +67,19 @@ public:
 
 	iterator& operator+=(difference_type diff)
 	{
+		while (m_deletedCur != m_deletedEnd && *m_deletedCur == (m_curIndex + diff))
+		{
+			diff += 1;
+			++m_deletedCur;
+		}
+
+		m_curIndex += diff;
+
 		std::apply([&](StoreIterator<Ts>&... elem)
 		{
 			((elem += diff), ...);
 		}, m_curs);
 
-		m_curIndex += diff;
 		return *this;
 	}
 
@@ -114,6 +117,8 @@ public:
 		return m_curs == other.m_curs;
 	}
 private:
+	AtomicBitset<MAX_ENTRIES>::OnesIterator m_deletedCur;
+	AtomicBitset<MAX_ENTRIES>::OnesIterator m_deletedEnd;
 	std::tuple<StoreIterator<Ts>...> m_curs;
 	std::size_t m_curIndex;
 };
@@ -123,8 +128,6 @@ class ParallelPooledStore
 {
 public:
 	using ArchType = Archetype<std::size_t, Ts...>;
-
-	static const auto MAX_ENTRIES = PooledStore<std::size_t>::MAX_T_PER_STORE;
 
 	ParallelPooledStore() : m_curCount(0), m_prefix(0)
 	{
@@ -256,7 +259,7 @@ public:
 		{
 			// Convoluted to fix ambiguous syntax errors
 			return std::make_from_tuple<ParallelPooledStoreIterator<TQueries...>>(
-				std::forward_as_tuple(index, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...)
+				std::forward_as_tuple(index, m_store.m_deletedBits, std::get<PooledStore<std::remove_const_t<TQueries>>>(m_store.m_stores)...)
 			);
 		}
 

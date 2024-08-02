@@ -216,13 +216,13 @@ public:
 	template<typename TArchetypeSrc, typename TArchetypeDest>
 	auto Transfer(std::size_t objId)
 	{
-
+		// TODO: Implement
 	}
 
 	template<typename TArchetypeSrc, typename TArchetypeDest>
 	auto Copy(std::size_t objId)
 	{
-
+		// TODO: Implement
 	}
 
 	std::size_t FindComponentIdDynamic(std::string_view componentName)
@@ -251,13 +251,13 @@ public:
 
 	void AddComponentDynamic(std::size_t objId, std::size_t componentId)
 	{
-
+		// TODO: Implement
 	}
 
 	void RemoveComponentDynamic(std::size_t objId, std::size_t componentId)
 	{
-
+		// TODO: Implement
 	}
 private:
-	std::tuple<typename TArchetypes::StoreType...> m_stores; // TODO: implement component agnostic archetypes
+	std::tuple<typename TArchetypes::StoreType...> m_stores; // TODO: implement component order agnostic archetypes
 };
