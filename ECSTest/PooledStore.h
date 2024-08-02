@@ -341,8 +341,9 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 
 					if constexpr (std::same_as<std::size_t, T>)
 					{
+						// Special case for ids
 						for (; offset <= lastOffsetIndex; ++offset)
-							newBlock->Data[offset] = T_PER_BLOCK * blockIndex + offset;
+							newBlock->Data[offset] = T_PER_BLOCK * blockIndex | (1ull << 63) + offset;
 					}
 					else
 					{

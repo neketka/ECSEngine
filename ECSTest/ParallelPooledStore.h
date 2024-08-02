@@ -8,6 +8,8 @@
 #include <ranges>
 #include <atomic>
 
+const auto ID_MASK = ~(~0ull << 24);
+
 template<StoreCompatible... Ts>
 class ParallelPooledStoreIterator
 {
@@ -161,7 +163,7 @@ public:
 
 			for (; cur < end; ++cur)
 			{
-				const_cast<std::atomic_size_t&>(*m_idMap.GetConst(*cur)).store(cur.GetIndex());
+				const_cast<std::atomic_size_t&>(*m_idMap.GetConst(*cur & ID_MASK)).store(cur.GetIndex());
 			}
 		}, m_stores);
 
@@ -337,8 +339,8 @@ private:
 					std::size_t movedId = std::get<std::size_t&>(mutDeletedObj); // Get id of moved object
 
 					const_cast<std::size_t&>(std::get<const std::size_t&>(*endIter)) = deadId; // Recycle dead id
-					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(movedId & ~(~0ull << 24))) = deletedIndex; // Update index of moved obj
-					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(deadId & ~(~0ull << 24))) = 0ull; // Mark id as dead
+					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(movedId & ID_MASK)) = deletedIndex; // Update index of moved obj
+					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(deadId & ID_MASK)) = 0ull; // Mark id as dead
 				}
 			};
 
