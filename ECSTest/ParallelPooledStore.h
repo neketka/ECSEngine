@@ -136,53 +136,44 @@ public:
 		m_prefix = prefix << 24; // 40 bit prefix
 	}
 
-	auto Emplace()
+	auto Emplace(std::size_t count)
 	{
-		auto& idStore = std::get<0>(m_stores);
+		const auto index = m_curCount.fetch_add(count);
+		const auto newCount = index + count;
+		const auto loadedIdMapSize = m_idMapSize.load();
 
-		std::size_t newId = m_sparseFree.AllocateOne();
-		std::size_t index = 0;
-
-		if (newId == ~0ull)
+		if (loadedIdMapSize < newCount)
 		{
-			while (newId == ~0ull)
-			{
-				index = m_curCount++;
-				auto newCount = index + 1;
-
-				m_sparseFree.GrowBitsTo(newCount);
-				m_occupiedBits.GrowBitsTo(newCount);
-				m_sparseMapSize += 1;
-				m_sparseMap.Emplace(index, 1);
-
-				newId = m_sparseFree.AllocateOne();
-			}
-
-			*idStore.Emplace(index, 1) = m_prefix | newId;
-			*m_sparseMap.Get(newId) = index;
-		}
-		else
-		{
-			index = *m_sparseMap.GetConst(newId);
+			const auto diff = newCount - loadedIdMapSize;
+			const auto index = m_idMapSize.fetch_add(diff);
+			m_idMap.Emplace(index, diff);
 		}
 
-		m_occupiedBits.Set(index, true);
+		m_deletedBits.GrowBitsTo(newCount);
 
 		std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
 		{
-			((elem.Emplace(index, 1)), ...);
+			idStore.Emplace(index, count);
+			((elem.Emplace(index, count)), ...);
+
+			auto cur = idStore.GetConst(index);
+			auto end = idStore.GetConst(index + count);
+
+			for (; cur < end; ++cur)
+			{
+				const_cast<std::atomic_size_t&>m_idMap.GetConst(*cur).store(cur.GetIndex());
+			}
 		}, m_stores);
 
-		return View<true, const std::size_t, Ts...>(*this, index, index + 1);
+		return View<true, const std::size_t, Ts...>(*this, index, index + count + 1);
 	}
 
 	void Delete(std::size_t id)
 	{
 		id &= ~(~0ull << 24);
 
-		auto index = *m_sparseMap.GetConst(id);
-		m_occupiedBits.Set(id, false);
-		m_sparseFree.Set(id, true);
+		auto index = *m_idMap.GetConst(id);
+		m_deletedBits.Set(id, true);
 	}
 
 	template<bool RefCounted, typename... TQueries>
@@ -289,18 +280,17 @@ public:
 	{
 		id &= ~(~0ull << 24);
 
-		if (!m_sparseFree.Get(id))
-			return View<true, TQueries...>(*this, -1, -1);
+		auto index = *m_idMap.GetConst(id);
 
-		auto index = *m_sparseMap.GetConst(id);
+		if (index == 0)
+			return View<true, TQueries...>(*this, -1, -1);
 
 		return View<true, TQueries...>(*this, index, std::min(index + 1, m_curCount.load()));
 	}
 private:
-	AtomicBitset<MAX_ENTRIES> m_sparseFree;
-	AtomicBitset<MAX_ENTRIES> m_occupiedBits;
-	PooledStore<std::size_t> m_sparseMap;
-	std::atomic_size_t m_sparseMapSize;
+	AtomicBitset<MAX_ENTRIES> m_deletedBits;
+	PooledStore<std::atomic_size_t> m_idMap;
+	std::atomic_size_t m_idMapSize;
 	std::size_t m_prefix;
 
 	std::tuple<PooledStore<std::size_t>, PooledStore<Ts>...> m_stores;
@@ -326,27 +316,29 @@ private:
 				auto endIter = constView.end();
 				endIter += -1;
 
-				for (std::size_t freeIndex : m_occupiedBits)
+				for (std::size_t deletedIndex : m_deletedBits)
 				{
 					--m_curCount;
 
-					if (freeIndex >= rightPtr) break;
+					if (deletedIndex >= rightPtr) break;
 
-					auto indexDiff = freeIndex - leftPtr;
-					leftPtr = freeIndex;
+					auto indexDiff = deletedIndex - leftPtr;
+					leftPtr = deletedIndex;
 					curIter += indexDiff;
 
-					auto unconst = std::apply([](const std::size_t& id, const Ts&... rest)
-					{
+					auto mutDeletedObj = std::apply([](const std::size_t& id, const Ts&... rest)
+					{ 
+						// Cast away constness of mutable object (so that RCU is not unnecessarily used)
 						return std::forward_as_tuple(const_cast<std::size_t&>(id), const_cast<Ts&>(rest)...);
 					}, *curIter);
 
-					unconst = *endIter;
-					std::size_t id = std::get<std::size_t&>(unconst) & ~(~0ull << 24);
+					std::size_t deadId = std::get<std::size_t&>(mutDeletedObj); // Get id of deleted obj
+					mutDeletedObj = *endIter; // Move from right ptr to cur deleted free one (fill empty slot)
+					std::size_t movedId = std::get<std::size_t&>(mutDeletedObj); // Get id of moved object
 
-					m_occupiedBits.Set(freeIndex, true);
-					const_cast<std::size_t&>(*m_sparseMap.GetConst(id)) = freeIndex;
-					m_occupiedBits.Set(rightPtr, false);
+					const_cast<std::size_t&>(std::get<const std::size_t&>(*endIter)) = deadId; // Recycle dead id
+					const_cast<std::size_t&>(*m_idMap.GetConst(movedId & ~(~0ull << 24))) = deletedIndex; // Update index of moved obj
+					const_cast<std::size_t&>(*m_idMap.GetConst(deadId & ~(~0ull << 24))) = 0ull; // Mark id as dead
 				}
 			};
 

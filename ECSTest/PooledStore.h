@@ -3,12 +3,7 @@
 #include "MemoryPool.h"
 
 template<typename T>
-concept StoreCompatible =
-	std::is_trivially_copyable_v<std::remove_const_t<T>>
-	&& std::is_trivially_destructible_v<std::remove_const_t<T>>
-	&& std::is_trivially_move_assignable_v<std::remove_const_t<T>>
-	&& std::is_trivially_move_constructible_v<std::remove_const_t<T>>
-	&& sizeof(T) >= sizeof(size_t);
+concept StoreCompatible = sizeof(T) >= sizeof(size_t);
 
 template<StoreCompatible T>
 class PooledStore
@@ -193,6 +188,11 @@ public:
 		{
 			return m_curIndex == other.m_curIndex;
 		}
+
+		inline std::size_t GetIndex() const
+		{
+			return m_curIndex;
+		}
 	private:
 		PooledStore<T> *m_store;
 
@@ -333,11 +333,24 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 			auto offset = blockIndex > firstBlock && nodeIndex > firstNode ? 0 : firstOffset;
 			auto lastOffsetIndex = blockIndex < lastBlock && nodeIndex < lastNode ? T_PER_BLOCK : lastOffset;
 
-			if (!block) 
+			if (!block)
 			{
 				if (offset == 0)
 				{
-					block = MemoryPool::RequestBlock<Block>();
+					auto newBlock = MemoryPool::RequestBlock<Block>();
+
+					if constexpr (std::same_as<std::size_t, T>)
+					{
+						for (; offset <= lastOffsetIndex; ++offset)
+							loadedBlock->Data[offset] = T_PER_BLOCK * blockIndex + offset;
+					}
+					else
+					{
+						for (; offset <= lastOffsetIndex; ++offset)
+							new (loadedBlock->Data + offset) T();
+					}
+
+					block = newBlock;
 					block.NotifyNonnull();
 				}
 				else
@@ -345,19 +358,6 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 					block.WaitNonnull();
 				}
 			}
-
-			/* Causes deadlock unsurprisingly, for now only trivial types will be accepted
-			
-			lock.lock();
-
-			auto loadedBlock = block.Load();
-
-			for (; offset <= lastOffsetIndex; ++offset)
-				new (loadedBlock->Data + offset) T();
-
-			lock.unlock();
-
-			*/
 		}
 	}
 

@@ -32,10 +32,10 @@ private:
 		return bit | (offset << INTERNAL_SHIFT_BITS) | (block << (INTERNAL_SHIFT_BITS + OFFSET_BITS));
 	}
 public:
-	class ZerosIterator
+	class OnesIterator
 	{
 	public:
-		using iterator = ZerosIterator;
+		using iterator = OnesIterator;
 		using reference = std::size_t&;
 		using pointer = std::size_t *;
 
@@ -43,23 +43,23 @@ public:
 		using value_type = std::size_t;
 		using difference_type = std::ptrdiff_t;
 
-		ZerosIterator(AtomicBitset *bitset, std::size_t index) 
-			: m_bitsToSkip(0), m_zerosLeft(bitset->m_zeroCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
+		OnesIterator(AtomicBitset *bitset, std::size_t index) 
+			: m_bitsToSkip(0), m_onesLeft(bitset->m_oneCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
 		{
-			if (m_zerosLeft == 0) return;
+			if (m_onesLeft == 0) return;
 
 			m_curBlock = bitset->m_blocks[0].Load();
 			if (m_curBlock)
 			{
 				m_curBitvec = &m_curBlock->Bits[0];
-				if (m_curBitvec->load() & 1)
+				if (!(m_curBitvec->load() & 1))
 				{
-					FindNextZero();
+					FindNextOne();
 				}
 			}
 		}
 
-		ZerosIterator() : m_zerosLeft(0)
+		OnesIterator()
 		{
 		}
 
@@ -79,9 +79,10 @@ public:
 
 		value_type operator*()
 		{
-			while (m_bitsToSkip > 0 && m_zerosLeft > 0)
+			while (m_bitsToSkip > 0 && m_onesLeft > 0)
 			{
-				FindNextZero();
+				FindNextOne();
+				*m_curBitvec ^= 1 << m_curBitIndex;
 			}
 
 			return m_curIndex;
@@ -89,15 +90,15 @@ public:
 
 		auto operator<=>(const iterator& other) const
 		{
-			return m_zerosLeft <=> other.m_zerosLeft;
+			return m_onesLeft <=> other.m_onesLeft;
 		}
 
 		auto operator==(const iterator& other) const
 		{
-			return m_zerosLeft == other.m_zerosLeft;
+			return m_onesLeft == other.m_onesLeft;
 		}
 	private:
-		void FindNextZero()
+		void FindNextOne()
 		{
 			++m_curIndex;
 
@@ -117,15 +118,15 @@ public:
 				m_curBitvecIndex = offsetIndex;
 				m_curBitvec = &m_curBlock->Bits[offsetIndex];
 				
-				auto curVal = m_curBitvec->load() | ~(~0ull << (bitIndex + 1));
-				if (curVal == ~0ull)
+				auto curVal = m_curBitvec->load() & (~0ull << (bitIndex + 1));
+				if (curVal == 0)
 				{
 					m_curIndex += 64 - bitIndex;
 				}
 				else
 				{
-					--m_zerosLeft;
-					m_curBitIndex = std::countr_one(curVal);
+					--m_onesLeft;
+					m_curBitIndex = std::countr_zero(curVal);
 					break;
 				}
 
@@ -142,7 +143,7 @@ public:
 		std::size_t m_curBitvecIndex;
 		std::size_t m_curBitIndex;
 
-		std::size_t m_zerosLeft;
+		std::size_t m_onesLeft;
 		std::size_t m_bitsToSkip;
 	};
 
@@ -150,18 +151,17 @@ public:
 	void Set(std::size_t index, bool value);
 	std::size_t AllocateOne();
 	std::size_t GetSize();
-	std::size_t GetZeroCount();
+	std::size_t GetOneCount();
 	void GrowBitsTo(std::size_t minBitCount);
 
-	ZerosIterator begin();
-	ZerosIterator end();
+	OnesIterator begin();
+	OnesIterator end();
 private:
 	void Grow();
 
 	std::array<MemoryPool::Ptr<AtomicBitsetBlock>, BLOCK_COUNT> m_blocks;
 	std::atomic_size_t m_count;
-	std::atomic_size_t m_zeroCount;
-	std::atomic_size_t m_zeroCapacity;
+	std::atomic_size_t m_oneCount;
 };
 
 template<std::size_t MinBits>
@@ -181,57 +181,14 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 	{
 		auto oldBits = bits.fetch_or(1ull << bit);
 		if (!(oldBits & (1ull << bit)))
-			--m_zeroCount;
+			++m_oneCount;
 	}
 	else
 	{
 		auto oldBits = bits.fetch_xor(1ull << bit);
 		if (oldBits & (1ull << bit))
-			++m_zeroCount;
+			--m_oneCount;
 	}
-}
-
-template<std::size_t MinBits>
-inline std::size_t AtomicBitset<MinBits>::AllocateOne()
-{
-	if (m_zeroCapacity == 0)
-	{
-		return ~0ull;
-	}
-
-	while (m_zeroCount > 0)
-	{
-		auto [blockCount, _, __] = GetComponents(m_count);
-		for (std::size_t block = 0; block <= blockCount; ++block)
-		{
-			auto& blockPtr = m_blocks[block];
-			blockPtr.WaitNonnull();
-			
-			std::uint8_t offset = 0;
-			for (auto& bits : blockPtr->Bits)
-			{
-				auto assumption = bits.load();
-				auto bitIndex = 0;
-				while (
-					assumption != ~0ull &&
-					!bits.compare_exchange_weak(
-						assumption,
-						assumption | (1ull << (bitIndex = std::countr_one(assumption)))
-					)
-				);
-
-				if (assumption != ~0ull)
-				{
-					--m_zeroCount;
-					return ToIndex(block, offset, bitIndex);
-				}
-
-				++offset;
-			}
-		}
-	}
-
-	return ~0ull;
 }
 
 template<std::size_t MinBits>
@@ -241,9 +198,9 @@ inline std::size_t AtomicBitset<MinBits>::GetSize()
 }
 
 template<std::size_t MinBits>
-inline std::size_t AtomicBitset<MinBits>::GetZeroCount()
+inline std::size_t AtomicBitset<MinBits>::GetOneCount()
 {
-	return m_zeroCount;
+	return m_oneCount;
 }
 
 template<std::size_t MinBits>
@@ -254,15 +211,15 @@ inline void AtomicBitset<MinBits>::GrowBitsTo(std::size_t minBitCount)
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::ZerosIterator AtomicBitset<MinBits>::begin()
+inline AtomicBitset<MinBits>::OnesIterator AtomicBitset<MinBits>::begin()
 {
-	return ZerosIterator(this, 0);
+	return OnesIterator(this, 0);
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::ZerosIterator AtomicBitset<MinBits>::end()
+inline AtomicBitset<MinBits>::OnesIterator AtomicBitset<MinBits>::end()
 {
-	return ZerosIterator();
+	return OnesIterator();
 }
 
 template<std::size_t MinBits>
@@ -270,10 +227,9 @@ inline void AtomicBitset<MinBits>::Grow()
 {
 	auto [block, offset, bit] = GetComponents(m_count.fetch_add(BLOCK_SIZE * 8));
 	
-	auto block = MemoryPool::RequestBlock<AtomicBitsetBlock>();
-	std::fill_n(m_blocks[block]->Bits, BLOCK_SIZE / sizeof(std::atomic_size_t), 0ull);
-	m_zeroCount += BLOCK_SIZE * 8;
+	auto allocBlock = MemoryPool::RequestBlock<AtomicBitsetBlock>();
+	std::fill_n(allocBlock->Bits, BLOCK_SIZE / sizeof(std::atomic_size_t), 0ull);
 
-	m_blocks[block] = std::move(block);
+	m_blocks[block] = std::move(allocBlock);
 	m_blocks[block].NotifyNonnull();
 }
