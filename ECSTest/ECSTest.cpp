@@ -18,29 +18,27 @@ struct MyComponent2
 void test()
 {
     using Simple = Archetype<MyComponent>;
-    using SimpleQuery = Query::Read<std::size_t, MyComponent>;
+    using SimpleQuery = Query::Read<std::size_t>::Read<MyComponent>;
 
     EcsStorage<Simple> storage;
     
-    for (auto [id, comp] : storage.Create<Simple>(2))
+    clock_t startCreate = clock();
+    for (auto [id, comp] : storage.Create<Simple>(2000000))
         comp.x = 51;
+    clock_t endCreate = clock();
 
+    clock_t startIter = clock();
     std::size_t exId = 0;
-
     for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
     {
-        std::cout << id << " " << myComp.x << std::endl;
         exId = id;
     }
+    clock_t endIter = clock();
 
-    storage.Delete<Simple>(exId);
+    auto createTime = static_cast<double>(endCreate - startCreate) / CLOCKS_PER_SEC * 1000.0;
+    auto iterTime = static_cast<double>(endIter - startIter) / CLOCKS_PER_SEC * 1000.0;
 
-    std::cout << "After Delete" << std::endl;
-
-    for (auto [id, myComp] : storage.RunQuery<SimpleQuery>())
-    {
-        std::cout << id << " " << myComp.x << std::endl;
-    }
+    std::cout << exId << " " << "Create " << createTime << "ms Iter " << iterTime << "ms" << std::endl;
 }
 
 int main()

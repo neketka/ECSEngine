@@ -29,7 +29,7 @@ private:
 	static std::tuple<std::int32_t, std::int16_t, std::int16_t> GetInternalIndices(std::size_t index)
 	{
 		auto [indexNodeIndex, indexNodeOffset] = std::div(static_cast<long long>(index), T_PER_INDEX);
-		auto [blockIndex, blockOffset] = std::div(static_cast<long long>(index), T_PER_BLOCK);
+		auto [blockIndex, blockOffset] = std::div(static_cast<long long>(indexNodeOffset), T_PER_BLOCK);
 
 		return { indexNodeIndex, blockIndex, blockOffset };
 	}
@@ -274,7 +274,7 @@ public:
 	PooledStore(const PooledStore<T>&) = delete;
 	PooledStore& operator=(const PooledStore<T>&) = delete;
 
-	MutableIterator Emplace(std::size_t firstIndex, std::size_t count);
+	MutableIterator Emplace(std::size_t firstIndex, std::size_t count, std::size_t prefix=0);
 	MutableIterator Get(std::size_t index);
 	ConstIterator GetConst(std::size_t index);
 	void ReclaimBlocks();
@@ -295,7 +295,7 @@ inline PooledStore<T>::PooledStore()
 }
 
 template<StoreCompatible T>
-inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t firstIndex, std::size_t count)
+inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t firstIndex, std::size_t count, std::size_t prefix)
 {
 	auto [firstNode, firstBlock, firstOffset] = GetInternalIndices(firstIndex);
 	auto [lastNode, lastBlock, lastOffset] = GetInternalIndices(firstIndex + count - 1);
@@ -343,12 +343,7 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 					{
 						// Special case for ids
 						for (; offset <= lastOffsetIndex; ++offset)
-							newBlock->Data[offset] = T_PER_BLOCK * blockIndex | (1ull << 63) + offset;
-					}
-					else
-					{
-						for (; offset <= lastOffsetIndex; ++offset)
-							new (newBlock->Data + offset) T();
+							newBlock->Data[offset] = ((T_PER_BLOCK * blockIndex) | prefix) + offset;
 					}
 
 					block = newBlock;

@@ -138,7 +138,7 @@ public:
 
 	void SetIdPrefix(std::size_t prefix)
 	{
-		m_prefix = prefix << 24; // 40 bit prefix
+		m_prefix = prefix << 24 | (1ull << 63); // 40 bit prefix
 	}
 
 	auto Emplace(std::size_t count)
@@ -158,7 +158,7 @@ public:
 
 		std::apply([&](PooledStore<std::size_t>& idStore, PooledStore<Ts>&... elem)
 		{
-			idStore.Emplace(index, count);
+			idStore.Emplace(index, count, m_prefix);
 			((elem.Emplace(index, count)), ...);
 
 			auto cur = idStore.GetConst(index);
@@ -166,7 +166,13 @@ public:
 
 			for (; cur < end; ++cur)
 			{
-				const_cast<std::atomic_size_t&>(*m_idMap.GetConst(*cur & ID_MASK)).store(cur.GetIndex());
+				const auto curId = *cur & ID_MASK;
+				auto& idMapEntry = *m_idMap.GetConst(curId);
+				if (curId == 131072)
+				{
+					auto& idMapEntry = *m_idMap.GetConst(curId);
+				}
+				const_cast<std::atomic_size_t&>(idMapEntry).store(cur.GetIndex());
 			}
 		}, m_stores);
 
