@@ -44,7 +44,7 @@ public:
 		using reference = TIter&;
 		using pointer = TIter *;
 
-		using iterator_category = std::forward_iterator_tag;
+		using iterator_category = std::bidirectional_iterator_tag;
 		using value_type = TIter;
 		using difference_type = std::ptrdiff_t;
 
@@ -167,6 +167,32 @@ public:
 			return *this;
 		}
 
+		iterator operator--(int)
+		{
+			iterator old = *this;
+			--(*this);
+			return old;
+		}
+
+		iterator& operator--()
+		{
+			Next(-1);
+			return *this;
+		}
+
+		iterator operator-(difference_type diff)
+		{
+			iterator newIter = *this;
+			newIter -= diff;
+			return newIter;
+		}
+
+		iterator& operator-=(difference_type diff)
+		{
+			Next(-diff);
+			return *this;
+		}
+
 		reference operator*() const
 		{
 			// Hack to get around iterator rules
@@ -259,7 +285,7 @@ public:
 			else if (!m_undefinedBlock)
 			{
 				// Block already in use
-				m_curT = reinterpret_cast<TIter *>(m_curBlock->Data) + offset;
+				m_curT = m_curBlock->Data + nextOffset;
 			}
 
 			m_curTIndex = nextOffset;
@@ -300,15 +326,13 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 	auto [firstNode, firstBlock, firstOffset] = GetInternalIndices(firstIndex);
 	auto [lastNode, lastBlock, lastOffset] = GetInternalIndices(firstIndex + count - 1);
 
-	auto firstInitNode = firstOffset == 0 ? firstNode : (firstNode + 1);
-
 	// TODO: optimize this loop
-	for (auto nodeIndex = firstNode; nodeIndex <= lastNode; ++nodeIndex)
+	for (std::size_t nodeIndex = firstNode; nodeIndex <= lastNode; ++nodeIndex)
 	{
 		auto& node = m_nodes[nodeIndex];
 
-		auto blockIndex = nodeIndex > firstNode ? 0 : firstBlock;
-		auto lastBlockIndex = nodeIndex < lastNode ? BLOCKS_PER_INDEX : lastBlock;
+		std::size_t blockIndex = nodeIndex > firstNode ? 0 : firstBlock;
+		std::size_t lastBlockIndex = nodeIndex < lastNode ? BLOCKS_PER_INDEX : lastBlock;
 
 		if (!node)
 		{
@@ -330,8 +354,8 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 			auto& lock = loadedNode->WriterLock[blockIndex];
 			auto& block = loadedNode->Block[blockIndex];
 
-			auto offset = blockIndex > firstBlock && nodeIndex > firstNode ? 0 : firstOffset;
-			auto lastOffsetIndex = blockIndex < lastBlock && nodeIndex < lastNode ? T_PER_BLOCK : lastOffset;
+			std::size_t offset = blockIndex > firstBlock && nodeIndex > firstNode ? 0 : firstOffset;
+			std::size_t lastOffsetIndex = blockIndex < lastBlock && nodeIndex < lastNode ? T_PER_BLOCK : lastOffset;
 
 			if (!block)
 			{
@@ -342,8 +366,8 @@ inline PooledStore<T>::MutableIterator PooledStore<T>::Emplace(std::size_t first
 					if constexpr (std::same_as<std::size_t, T>)
 					{
 						// Special case for ids
-						for (; offset <= lastOffsetIndex; ++offset)
-							newBlock->Data[offset] = ((T_PER_BLOCK * blockIndex) | prefix) + offset;
+						for (std::size_t off = 0; off < T_PER_BLOCK; ++off)
+							newBlock->Data[off] = prefix | (T_PER_INDEX * nodeIndex + T_PER_BLOCK * blockIndex + off);
 					}
 
 					block = newBlock;

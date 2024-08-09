@@ -14,11 +14,11 @@ private:
 
 	static const std::size_t BLOCK_COUNT = std::max(MinBits / 8, BLOCK_SIZE) / (BLOCK_SIZE);
 
-	static const std::size_t BLOCK_BITS = std::bit_width(BLOCK_COUNT);
-	static const std::size_t OFFSET_BITS = std::bit_width(BLOCK_SIZE / sizeof(std::atomic_size_t));
+	static const std::size_t BLOCK_BITS = std::bit_width(BLOCK_COUNT - 1);
+	static const std::size_t OFFSET_BITS = std::bit_width(BLOCK_SIZE / sizeof(std::atomic_size_t) - 1);
 	static const std::size_t INTERNAL_SHIFT_BITS = 6;
 
-	inline static std::tuple<std::uint16_t, std::uint8_t, std::uint8_t> GetComponents(std::size_t index)
+	inline static std::tuple<std::uint16_t, std::uint16_t, std::uint16_t> GetComponents(std::size_t index)
 	{
 		auto internal = index & ~(~0ull << INTERNAL_SHIFT_BITS);
 		auto offset = (index >> INTERNAL_SHIFT_BITS) & ~(~0ull << OFFSET_BITS);
@@ -44,7 +44,7 @@ public:
 		using difference_type = std::ptrdiff_t;
 
 		OnesIterator(AtomicBitset *bitset, std::size_t index) 
-			: m_onesLeft(bitset->m_oneCount), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
+			: m_onesLeft(bitset->m_oneCount), m_bitset(bitset), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
 		{
 			if (m_onesLeft == 0) return;
 
@@ -76,6 +76,7 @@ public:
 			{
 				FindNextOne();
 				*m_curBitvec ^= 1ull << m_curBitIndex;
+				--m_bitset->m_oneCount;
 			}
 			--m_onesLeft;
 
@@ -146,7 +147,6 @@ public:
 
 	bool Get(std::size_t index);
 	void Set(std::size_t index, bool value);
-	std::size_t AllocateOne();
 	std::size_t GetSize();
 	std::size_t GetOneCount();
 	void GrowBitsTo(std::size_t minBitCount);
@@ -157,8 +157,8 @@ private:
 	void Grow();
 
 	std::array<MemoryPool::Ptr<AtomicBitsetBlock>, BLOCK_COUNT> m_blocks;
-	std::atomic_size_t m_count;
-	std::atomic_size_t m_oneCount;
+	std::atomic_size_t m_count = 0;
+	std::atomic_size_t m_oneCount = 0;
 };
 
 template<std::size_t MinBits>
@@ -173,7 +173,6 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 {
 	auto [block, offset, bit] = GetComponents(index);
 	auto& bits = m_blocks[block]->Bits[offset];
-
 	if (value)
 	{
 		auto oldBits = bits.fetch_or(1ull << bit);

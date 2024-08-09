@@ -22,7 +22,7 @@ public:
 	using reference = std::tuple<Ts&...>;
 	using pointer = std::tuple<Ts *...>;
 
-	using iterator_category = std::forward_iterator_tag;
+	using iterator_category = std::bidirectional_iterator_tag;
 	using value_type = std::tuple<Ts&...>;
 	using difference_type = std::ptrdiff_t;
 
@@ -83,6 +83,34 @@ public:
 		return *this;
 	}
 
+	iterator operator--(int)
+	{
+		iterator old = *this;
+		--(*this);
+		return old;
+	}
+
+	iterator& operator--()
+	{
+		*this -= 1;
+
+		return *this;
+	}
+
+	iterator operator-(difference_type diff)
+	{
+		iterator copy = *this;
+		copy -= diff;
+		return copy;
+	}
+
+	iterator& operator-=(difference_type diff)
+	{
+		*this += -diff;
+
+		return *this;
+	}
+
 	reference operator*()
 	{
 		return std::apply([](StoreIterator<Ts>&... elem)
@@ -109,12 +137,17 @@ public:
 
 	auto operator<=>(const iterator& other) const
 	{
-		return m_curs <=> other.m_curs;
+		return m_curIndex <=> other.m_curIndex;
 	}
 
 	auto operator==(const iterator& other) const
 	{
-		return m_curs == other.m_curs;
+		return m_curIndex == other.m_curIndex;
+	}
+
+	auto GetIndex()
+	{
+		return m_curIndex;
 	}
 private:
 	AtomicBitset<MAX_ENTRIES>::OnesIterator m_deletedCur;
@@ -168,15 +201,11 @@ public:
 			{
 				const auto curId = *cur & ID_MASK;
 				auto& idMapEntry = *m_idMap.GetConst(curId);
-				if (curId == 131072)
-				{
-					auto& idMapEntry = *m_idMap.GetConst(curId);
-				}
 				const_cast<std::atomic_size_t&>(idMapEntry).store(cur.GetIndex());
 			}
 		}, m_stores);
 
-		return View<true, const std::size_t, Ts...>(*this, index, index + count + 1);
+		return View<true, const std::size_t, Ts...>(*this, index, index + count);
 	}
 
 	void Delete(std::size_t id)
@@ -318,28 +347,33 @@ private:
 				idStore.ReclaimBlocks();
 				(elem.ReclaimBlocks(), ...);
 
-				std::size_t leftPtr = 0;
-				std::size_t rightPtr = m_curCount - 1;
-
-				// break constness since this function is exclusive
-				auto constView = View<false, const std::size_t, const Ts...>(*this, 0, m_curCount.load());
+				// break constness since this function is only accessed at a sync point (ref count == 0)
+				// so RCU will not make a copy
+				// 
+				// TODO: make this an easily accessible behavior so all systems have right to lock down a block at a sync point
+				// to avoid an potentially expensive copy, without having to use a const_cast hack
+				//
+				// However, it is unknown if a block copy is more expensive than waiting on a lock
+				// and if this functionality needs to be accessible outside of this use case
+				auto constView = View<false, const std::size_t, const Ts...>(*this, 0, m_curCount.load() - 1);
 				auto curIter = constView.begin();
 				auto endIter = constView.end();
-				endIter += -1;
 
 				for (std::size_t deletedIndex : m_deletedBits)
 				{
-					--m_curCount;
+					curIter += deletedIndex - curIter.GetIndex();
 
-					if (deletedIndex >= rightPtr) break;
+					while (curIter <= endIter && m_deletedBits.Get(endIter.GetIndex()))
+					{
+						--endIter;
+						--m_curCount;
+					}
 
-					auto indexDiff = deletedIndex - leftPtr;
-					leftPtr = deletedIndex;
-					curIter += indexDiff;
+					if (curIter >= endIter) break;
 
 					auto mutDeletedObj = std::apply([](const std::size_t& id, const Ts&... rest)
 					{ 
-						// Cast away constness of mutable object (so that RCU is not unnecessarily used)
+						// Cast away constness of mutable object (to avoid unnecessary copy by RCU)
 						return std::forward_as_tuple(const_cast<std::size_t&>(id), const_cast<Ts&>(rest)...);
 					}, *curIter);
 
@@ -349,6 +383,9 @@ private:
 
 					const_cast<std::size_t&>(std::get<const std::size_t&>(*endIter)) = deadId; // Recycle dead id
 					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(movedId & ID_MASK)) = deletedIndex; // Update index of moved obj
+
+					--endIter;
+					--m_curCount;
 				}
 			};
 
