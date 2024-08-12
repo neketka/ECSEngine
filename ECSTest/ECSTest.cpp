@@ -19,7 +19,8 @@ struct MyComponent2
 void test()
 {
     using Simple = Archetype<MyComponent, MyComponent2>;
-    using SimpleQuery = Query::Read<std::size_t>::Read<MyComponent, MyComponent2>;
+    using SimpleReadQuery = Query::Read<std::size_t, MyComponent, MyComponent2>;
+    using SimpleWriteQuery = Query::Read<std::size_t>::Write<MyComponent, MyComponent2>;
 
     EcsStorage<Simple> storage;
     
@@ -31,27 +32,43 @@ void test()
     }
     clock_t endCreate = clock();
 
-    clock_t startIter = clock();
-    std::size_t deletedCount = 0;
-    for (auto [id, myComp, myComp2] : storage.RunQuery<SimpleQuery>())
+    std::size_t count = 0;
+    clock_t startRead = clock();
+    for (auto [id, myComp, myComp2] : storage.RunQuery<SimpleWriteQuery>())
     {
-        storage.Delete<Simple>(id);
-        ++deletedCount;
+        ++count;
     }
-    clock_t endIter = clock();
+    clock_t endRead = clock();
 
-    std::size_t notDeletedCount = 0;
+    clock_t startUpdate = clock();
+    for (auto [id, myComp, myComp2] : storage.RunQuery<SimpleWriteQuery>())
+    {
+        myComp.x = count;
+        myComp2.x = count;
+        ++count;
+    }
+    clock_t endUpdate = clock();
+
+    clock_t startDelete = clock();
     for (auto [id] : storage.RunQuery<Query::Read<std::size_t>>())
     {
-        std::cout << "undeleted id " << id << std::endl;
-        ++notDeletedCount;
+        storage.Delete<Simple>(id);
+        --count;
     }
+    clock_t endDelete = clock();
 
     auto createTime = static_cast<double>(endCreate - startCreate) / CLOCKS_PER_SEC * 1000.0;
-    auto iterTime = static_cast<double>(endIter - startIter) / CLOCKS_PER_SEC * 1000.0;
+    auto deleteTime = static_cast<double>(endDelete - startDelete) / CLOCKS_PER_SEC * 1000.0;
+    auto updateTime = static_cast<double>(endUpdate - startUpdate) / CLOCKS_PER_SEC * 1000.0;
+    auto readTime = static_cast<double>(endRead - startRead) / CLOCKS_PER_SEC * 1000.0;
 
-    std::cout << "Attempted delete: " << deletedCount << " Not deleted: " << notDeletedCount << std::endl;
-    std::cout << "Create " << createTime << "ms Iter " << iterTime << "ms" << std::endl;
+    std::cout 
+        << "Objects " << count << std::endl
+        << "Create " << createTime 
+        << "ms Read " << updateTime 
+        << "ms Update " << updateTime  
+        << "ms Delete " << deleteTime
+        << "ms" << std::endl;
 }
 
 int main()
