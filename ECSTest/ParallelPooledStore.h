@@ -22,14 +22,16 @@ public:
 	using reference = std::tuple<Ts&...>;
 	using pointer = std::tuple<Ts *...>;
 
-	using iterator_category = std::bidirectional_iterator_tag;
+	using iterator_category = std::forward_iterator_tag;
 	using value_type = std::tuple<Ts&...>;
 	using difference_type = std::ptrdiff_t;
 
 	using UnconstReference = std::tuple<std::remove_const_t<Ts>&...>;
 
 	ParallelPooledStoreIterator(std::size_t index, AtomicBitset<MAX_ENTRIES>& deletedBits, PooledStore<std::remove_const_t<Ts>>&... stores) 
-		: m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...), m_deletedCur(deletedBits.begin()), m_deletedEnd(deletedBits.end())
+		: 
+		m_curIndex(index), m_curs(stores.GetIterator<Ts>(index)...), 
+		m_deletedCur(deletedBits.ReadonlyBegin()), m_deletedEnd(deletedBits.ReadonlyEnd())
 	{
 		*this += 0; // trigger deletion check
 	}
@@ -67,7 +69,8 @@ public:
 
 	iterator& operator+=(difference_type diff)
 	{
-		while (m_deletedCur != m_deletedEnd && *m_deletedCur == (m_curIndex + diff))
+		// Backward iteration will not include deleted bits checks
+		while (diff > 0 && m_deletedCur != m_deletedEnd && *m_deletedCur == (m_curIndex + diff))
 		{
 			diff += 1;
 			++m_deletedCur;
@@ -83,6 +86,7 @@ public:
 		return *this;
 	}
 
+	/*
 	iterator operator--(int)
 	{
 		iterator old = *this;
@@ -109,7 +113,7 @@ public:
 		*this += -diff;
 
 		return *this;
-	}
+	}*/
 
 	reference operator*()
 	{
@@ -137,7 +141,8 @@ public:
 
 	auto operator<=>(const iterator& other) const
 	{
-		return m_curIndex <=> other.m_curIndex;
+		// Account for overflow (limit the size of a store to 56-bit max)
+		return (m_curIndex + 0xFF) <=> (other.m_curIndex + 0xFF);
 	}
 
 	auto operator==(const iterator& other) const
@@ -150,8 +155,8 @@ public:
 		return m_curIndex;
 	}
 private:
-	AtomicBitset<MAX_ENTRIES>::OnesIterator m_deletedCur;
-	AtomicBitset<MAX_ENTRIES>::OnesIterator m_deletedEnd;
+	AtomicBitset<MAX_ENTRIES>::OnesIterator<false> m_deletedCur;
+	AtomicBitset<MAX_ENTRIES>::OnesIterator<false> m_deletedEnd;
 	std::tuple<StoreIterator<Ts>...> m_curs;
 	std::size_t m_curIndex;
 };
@@ -210,7 +215,7 @@ public:
 
 	void Delete(std::size_t id)
 	{
-		id &= ~(~0ull << 24);
+		id &= ID_MASK;
 
 		auto index = m_idMap.GetConst(id)->load();
 		m_deletedBits.Set(index, true);
@@ -283,7 +288,8 @@ public:
 
 		operator bool() const
 		{
-			return m_beginIndex < m_endIndex;
+			// Account for overflow (limit the size of a store to 56-bit max)
+			return (m_beginIndex + 0xFF) < (m_endIndex + 0xFF);
 		}
 	private:
 		ParallelPooledStore<Ts...>& m_store;
@@ -318,7 +324,7 @@ public:
 	template<typename... TQueries>
 	View<true, TQueries...> GetViewAt(std::size_t id)
 	{
-		id &= ~(~0ull << 24);
+		id &= ID_MASK;
 
 		auto index = *m_idMap.GetConst(id);
 
@@ -363,13 +369,20 @@ private:
 				{
 					curIter += deletedIndex - curIter.GetIndex();
 
-					while (curIter <= endIter && m_deletedBits.Get(endIter.GetIndex()))
+					// TODO: Allow backward iterator of deleted bits to optimize this Get/Set process
+					
+					while (curIter <= endIter && deletedIndex < endIter.GetIndex() && m_deletedBits.Get(endIter.GetIndex()))
 					{
-						--endIter;
+						m_deletedBits.Set(endIter.GetIndex(), false);
+						endIter += -1;
 						--m_curCount;
 					}
 
-					if (curIter >= endIter) break;
+					if (curIter >= endIter)
+					{
+						--m_curCount; // The deletedBits iterator has cleaned this up, so remove it from count
+						break;
+					}
 
 					auto mutDeletedObj = std::apply([](const std::size_t& id, const Ts&... rest)
 					{ 
@@ -384,7 +397,7 @@ private:
 					const_cast<std::size_t&>(std::get<const std::size_t&>(*endIter)) = deadId; // Recycle dead id
 					const_cast<std::atomic_size_t&>(*m_idMap.GetConst(movedId & ID_MASK)) = deletedIndex; // Update index of moved obj
 
-					--endIter;
+					endIter += -1;
 					--m_curCount;
 				}
 			};

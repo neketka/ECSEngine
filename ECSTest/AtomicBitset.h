@@ -32,10 +32,11 @@ private:
 		return bit | (offset << INTERNAL_SHIFT_BITS) | (block << (INTERNAL_SHIFT_BITS + OFFSET_BITS));
 	}
 public:
+	template<bool Destructive>
 	class OnesIterator
 	{
 	public:
-		using iterator = OnesIterator;
+		using iterator = OnesIterator<Destructive>;
 		using reference = std::size_t&;
 		using pointer = std::size_t *;
 
@@ -43,8 +44,9 @@ public:
 		using value_type = std::size_t;
 		using difference_type = std::ptrdiff_t;
 
-		OnesIterator(AtomicBitset *bitset, std::size_t index) 
-			: m_onesLeft(bitset->m_oneCount), m_bitset(bitset), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0)
+		OnesIterator(AtomicBitset *bitset, std::size_t index) : 
+			m_onesLeft(bitset->m_oneCount), m_bitset(bitset), m_curIndex(0), m_curBitIndex(0), m_curBlockIndex(0), 
+			m_initialOnes(bitset->m_oneCount)
 		{
 			if (m_onesLeft == 0) return;
 
@@ -72,11 +74,17 @@ public:
 
 		iterator& operator++()
 		{
+			m_onesLeft = std::min(m_bitset->m_oneCount.load(), m_initialOnes) + (m_onesLeft - m_initialOnes);
+			m_initialOnes = m_bitset->m_oneCount;
+
 			if (m_onesLeft > 1)
 			{
 				FindNextOne();
-				*m_curBitvec ^= 1ull << m_curBitIndex;
-				--m_bitset->m_oneCount;
+				if constexpr (Destructive)
+				{
+					*m_curBitvec ^= 1ull << m_curBitIndex;
+					--m_bitset->m_oneCount;
+				}
 			}
 			--m_onesLeft;
 
@@ -143,6 +151,7 @@ public:
 		std::size_t m_curBitIndex;
 
 		std::size_t m_onesLeft;
+		std::size_t m_initialOnes;
 	};
 
 	bool Get(std::size_t index);
@@ -151,8 +160,11 @@ public:
 	std::size_t GetOneCount();
 	void GrowBitsTo(std::size_t minBitCount);
 
-	OnesIterator begin();
-	OnesIterator end();
+	OnesIterator<false> ReadonlyBegin();
+	OnesIterator<false> ReadonlyEnd();
+
+	OnesIterator<true> begin();
+	OnesIterator<true> end();
 private:
 	void Grow();
 
@@ -181,6 +193,7 @@ inline void AtomicBitset<MinBits>::Set(std::size_t index, bool value)
 	}
 	else
 	{
+		auto ones = m_oneCount.load();
 		auto oldBits = bits.fetch_xor(1ull << bit);
 		if (oldBits & (1ull << bit))
 			--m_oneCount;
@@ -207,15 +220,27 @@ inline void AtomicBitset<MinBits>::GrowBitsTo(std::size_t minBitCount)
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::OnesIterator AtomicBitset<MinBits>::begin()
+inline AtomicBitset<MinBits>::OnesIterator<false> AtomicBitset<MinBits>::ReadonlyBegin()
 {
-	return OnesIterator(this, 0);
+	return OnesIterator<false>(this, 0);
 }
 
 template<std::size_t MinBits>
-inline AtomicBitset<MinBits>::OnesIterator AtomicBitset<MinBits>::end()
+inline AtomicBitset<MinBits>::OnesIterator<false> AtomicBitset<MinBits>::ReadonlyEnd()
 {
-	return OnesIterator();
+	return OnesIterator<false>();
+}
+
+template<std::size_t MinBits>
+inline AtomicBitset<MinBits>::OnesIterator<true> AtomicBitset<MinBits>::begin()
+{
+	return OnesIterator<true>(this, 0);
+}
+
+template<std::size_t MinBits>
+inline AtomicBitset<MinBits>::OnesIterator<true> AtomicBitset<MinBits>::end()
+{
+	return OnesIterator<true>();
 }
 
 template<std::size_t MinBits>

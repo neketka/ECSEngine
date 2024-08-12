@@ -24,7 +24,7 @@ void test()
     EcsStorage<Simple> storage;
     
     clock_t startCreate = clock();
-    for (auto [id, myComp, myComp2] : storage.Create<Simple>(200000))
+    for (auto [id, myComp, myComp2] : storage.Create<Simple>(2000000))
     {
         myComp.x = 51;
         myComp2.x = 14;
@@ -41,8 +41,9 @@ void test()
     clock_t endIter = clock();
 
     std::size_t notDeletedCount = 0;
-    for (auto _ : storage.RunQuery<Query>())
+    for (auto [id] : storage.RunQuery<Query::Read<std::size_t>>())
     {
+        std::cout << "undeleted id " << id << std::endl;
         ++notDeletedCount;
     }
 

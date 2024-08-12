@@ -156,18 +156,18 @@ public:
 			TRelationArchPath, TUsedComponentsArch, TReadsWrites...
 		>;
 
-	template<typename TRelationType> requires std::same_as<TLevelTraverseRelation, std::monostate>
-	using FollowRelation =
+	template<typename ...TRelationTypes> requires std::same_as<TLevelTraverseRelation, std::monostate>
+	using Join =
 		QueryBase<
 			std::monostate, TExcludedArch, TContainsOrExprs,
-			typename TRelationArchPath::template Append<TRelationType>, TUsedComponentsArch, TReadsWrites...
+			typename TRelationArchPath::template Append<Archetype<TRelationTypes...>>, TUsedComponentsArch, TReadsWrites...
 		>;
 
-	template<typename TRelationType> requires std::same_as<TLevelTraverseRelation, std::monostate>
-	using FollowInverseRelation = 
+	template<typename ...TRelationTypes> requires std::same_as<TLevelTraverseRelation, std::monostate>
+	using JoinRecursive = 
 		QueryBase<
 			std::monostate, TExcludedArch, TContainsOrExprs,
-			typename TRelationArchPath::template Append<const TRelationType>, TUsedComponentsArch, TReadsWrites...
+			typename TRelationArchPath::template Append<const Archetype<TRelationTypes...>>, TUsedComponentsArch, TReadsWrites...
 		>;
 };
 
