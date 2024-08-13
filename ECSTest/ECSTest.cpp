@@ -71,7 +71,7 @@ void test()
         << "ms" << std::endl;
 }
 
-int main()
+int main_()
 {
     const auto poolSize = 256 * 1024 * 1024; // 256 MB
     MemoryPool::Initialize(poolSize / BLOCK_SIZE);

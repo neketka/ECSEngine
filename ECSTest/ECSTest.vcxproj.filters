@@ -4,11 +4,17 @@
     <Filter Include="ECS">
       <UniqueIdentifier>{d2f33c05-7ce3-4592-9627-bee24d0fdd00}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{2070b2c9-de59-4ed3-87bf-7f962c18f8b3}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="ECSTest.cpp" />
     <ClCompile Include="MemoryPool.cpp">
       <Filter>ECS</Filter>
+    </ClCompile>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="ECSTest.cpp">
+      <Filter>Tests</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -34,6 +40,12 @@
       <Filter>ECS</Filter>
     </ClInclude>
     <ClInclude Include="Archetype.h">
+      <Filter>ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="ExSystem.h">
+      <Filter>ECS</Filter>
+    </ClInclude>
+    <ClInclude Include="EcsInstance.h">
       <Filter>ECS</Filter>
     </ClInclude>
   </ItemGroup>

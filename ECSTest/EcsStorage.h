@@ -213,18 +213,6 @@ public:
 		return std::get<typename TArchetype::StoreType>(m_stores).Delete(objId);
 	}
 
-	template<typename TArchetypeSrc, typename TArchetypeDest>
-	auto Transfer(std::size_t objId)
-	{
-		// TODO: Implement
-	}
-
-	template<typename TArchetypeSrc, typename TArchetypeDest>
-	auto Copy(std::size_t objId)
-	{
-		// TODO: Implement
-	}
-
 	std::size_t FindComponentIdDynamic(std::string_view componentName)
 	{
 		// TODO: Implement

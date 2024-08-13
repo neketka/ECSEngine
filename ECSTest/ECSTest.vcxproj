@@ -141,6 +141,7 @@
   <ItemGroup>
     <ClCompile Include="ECSTest.cpp" />
     <ClCompile Include="MemoryPool.cpp" />
+    <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <Text Include="lang.ss" />
@@ -148,8 +149,10 @@
   <ItemGroup>
     <ClInclude Include="Archetype.h" />
     <ClInclude Include="AtomicBitset.h" />
+    <ClInclude Include="EcsInstance.h" />
     <ClInclude Include="EcsStorage.h" />
     <ClInclude Include="EcsWorld.h" />
+    <ClInclude Include="ExSystem.h" />
     <ClInclude Include="MemoryPool.h" />
     <ClInclude Include="ParallelPooledStore.h" />
     <ClInclude Include="PooledStore.h" />
